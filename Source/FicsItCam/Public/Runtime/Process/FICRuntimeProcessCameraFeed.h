@@ -4,7 +4,7 @@
 #include "FICRuntimeProcess.h"
 #include "Runtime/FICCameraArgument.h"
 #include "Brushes/SlateImageBrush.h"
-#include "Runtime/FICCameraReference.h"
+#include "Rendering/FICDummyViewport.h"
 
 #include "FICRuntimeProcessCameraFeed.generated.h"
 
@@ -24,7 +24,7 @@ public:
 	UFICProceduralTexture* PreviewTexture = nullptr;
 
 	TSharedPtr<SWindow> Window;
-	TSharedPtr<FFICFeedView> View;
+	TSharedPtr<FFICDummyViewport> View;
 
 	UPROPERTY(SaveGame)
 	FVector2D WindowLocation;
