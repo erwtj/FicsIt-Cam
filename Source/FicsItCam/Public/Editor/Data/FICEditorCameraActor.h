@@ -68,6 +68,7 @@ public:
 	UFICEditorCameraPathComponent* CameraPathComponent = nullptr;
 
 	TSharedPtr<SWidget> CameraPreview;
+	TSharedPtr<ISlateViewport> CameraPreviewViewport;
 	
 	AFICEditorCameraActor();
 	
