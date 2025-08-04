@@ -67,8 +67,8 @@ void AFICCaptureCamera::UpdateCaptureWithCameraData(UCameraComponent* InCamera) 
 	InCamera->GetCameraView(0, ViewInfo);
 	CaptureComponent->SetCameraView(ViewInfo);
 
-	CaptureComponent->PostProcessSettings.AutoExposureSpeedDown = 10000.0f;
-	CaptureComponent->PostProcessSettings.AutoExposureSpeedUp = 10000.0f;
+	CaptureComponent->PostProcessSettings.AutoExposureSpeedDown = 100.0f;
+	CaptureComponent->PostProcessSettings.AutoExposureSpeedUp = 100.0f;
 	CaptureComponent->PostProcessSettings.bOverride_AutoExposureSpeedDown = true;
 	CaptureComponent->PostProcessSettings.bOverride_AutoExposureSpeedUp = true;
 	CaptureComponent->PostProcessBlendWeight = 1.0f;

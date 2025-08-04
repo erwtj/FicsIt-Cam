@@ -1,7 +1,9 @@
 #include "Editor/Data/FICEditorCameraActor.h"
 
 #include "EngineUtils.h"
- #include "FICSubsystem.h"
+#include "FICDummyViewport.h"
+#include "FICSubsystem.h"
+#include "SViewport.h"
 #include "TextureResource.h"
 #include "Components/LineBatchComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -93,18 +95,23 @@ AFICEditorCameraActor::AFICEditorCameraActor() {
 	
 	CaptureComponent = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("CaptureComponent"));
 	CaptureComponent->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+
 	RenderTarget = CreateDefaultSubobject<UTextureRenderTarget2D>(TEXT("RenderTarget"));
-	RenderTarget->InitAutoFormat(320, 320);
+	RenderTarget->TargetGamma = 1;
+	RenderTarget->InitCustomFormat(320, 320, PF_R8G8B8A8, false);
+	RenderTarget->bGPUSharedFlag = true;
+
 	CaptureComponent->TextureTarget = RenderTarget;
-	CaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
-	CaptureComponent->DetailMode = DM_MAX;
-	CaptureComponent->LODDistanceFactor = 0.01;
-	CaptureComponent->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
-	CaptureComponent->bUseRayTracingIfEnabled = true;
-	CaptureComponent->ShowFlags.SetTemporalAA(true);
 	CaptureComponent->bCaptureEveryFrame = false;
-	CameraPreviewBrush = FSlateImageBrush(RenderTarget, FVector2D(RenderTarget->SizeX, RenderTarget->SizeY));
-	
+	CaptureComponent->bCaptureOnMovement = false;
+	CaptureComponent->bUseRayTracingIfEnabled = true;
+	CaptureComponent->bAlwaysPersistRenderingState = true;
+
+	CaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
+	if (GEngine) CaptureComponent->ShowFlags = *GEngine->GameViewport->GetEngineShowFlags();
+
+	//CameraPreviewBrush = FSlateImageBrush(RenderTarget, FVector2D(RenderTarget->SizeX, RenderTarget->SizeY));
+
 	PrimaryActorTick.bCanEverTick = true;
 
 	LineBatcher = CreateDefaultSubobject<ULineBatchComponent>(TEXT("LineBatcher"));
@@ -154,6 +161,7 @@ void AFICEditorCameraActor::Tick(float DeltaSeconds) {
 	if (CameraPreview && CameraPreview.IsUnique()) {
 		CameraPreview.Reset();
 		CaptureComponent->bCaptureEveryFrame = false;
+		CameraPreviewViewport.Reset();
 	}
 }
 
@@ -173,14 +181,24 @@ TSharedRef<SWidget> AFICEditorCameraActor::GetCameraPreview() {
 	UpdateRenderTarget();
 	CaptureComponent->bCaptureEveryFrame = true;
 	if (!CameraPreview) {
-		CameraPreview = SNew(SImage)
-		.Image(&CameraPreviewBrush);
+		CaptureComponent->CaptureScene();
+		FlushRenderingCommands();
+		FIntPoint Size = RenderTarget->GameThread_GetRenderTargetResource()->GetSizeXY();
+		CameraPreviewViewport = MakeShared<FFICDummyViewport>(RenderTarget->GameThread_GetRenderTargetResource()->GetRenderTargetTexture(), Size);
+		/*CameraPreview = SNew(SImage)
+		.Image(&CameraPreviewBrush);*/
+		CameraPreview = SNew(SViewport)
+		.ViewportInterface(CameraPreviewViewport)
+		.ForceVolatile(true)
+		.IsEnabled(true)
+		.RenderOpacity(1.0)
+		.EnableGammaCorrection(true);
 	}
 	return CameraPreview.ToSharedRef();
 }
 
 void AFICEditorCameraActor::UpdateRenderTarget() {
 	float AspectRatio = (float)EditorContext->GetScene()->ResolutionWidth / (float)EditorContext->GetScene()->ResolutionHeight;
-	RenderTarget->InitAutoFormat(AspectRatio*320, 320);
-	CameraPreviewBrush = FSlateImageBrush(RenderTarget, FVector2D(RenderTarget->SizeX, RenderTarget->SizeY));
+	RenderTarget->ResizeTarget(AspectRatio*320, 320);
+	//CameraPreviewBrush = FSlateImageBrush(RenderTarget, FVector2D(RenderTarget->SizeX, RenderTarget->SizeY));
 }

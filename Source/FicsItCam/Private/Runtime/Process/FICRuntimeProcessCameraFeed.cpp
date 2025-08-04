@@ -8,43 +8,8 @@
 #include "Components/SceneCaptureComponent2D.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Runtime/FICCaptureCamera.h"
-#include "Slate/SceneViewport.h"
 #include "Slate/SlateTextures.h"
-#include "Widgets/Images/SImage.h"
 #include "Widgets/SViewport.h"
-
-class FFICFeedView : public ISlateViewport
-{
-public:
-	FFICFeedView(FTexture2DRHIRef RenderTargetTexture, FIntPoint InSize)
-		: RenderTarget( new FSlateRenderTargetRHI(RenderTargetTexture, InSize.X, InSize.Y))
-		, Size(InSize) {
-		BeginInitResource(RenderTarget);
-	}
-
-	~FFICFeedView() {
-		ReleaseResourceAndFlush(RenderTarget);
-		delete RenderTarget;
-	}
-
-	// Begin ISlateViewport
-	virtual FIntPoint GetSize() const override {
-		return Size;
-	}
-
-	virtual FSlateShaderResource* GetViewportRenderTargetTexture() const override {
-		return RenderTarget;
-	}
-
-	virtual bool RequiresVsync() const override {
-		return false;
-	}
-	// End ISlateViewport
-
-private:
-	FSlateRenderTargetRHI* RenderTarget;
-	FIntPoint Size;
-};
 
 void UFICRuntimeProcessCameraFeed::SaveWindowSettings() {
 	WindowLocation = Window->GetPositionInScreen();
@@ -74,7 +39,7 @@ void UFICRuntimeProcessCameraFeed::Start(AFICRuntimeProcessorCharacter* InCharac
 
 	FIntPoint Size = FIntPoint(Camera->RenderTarget->SizeX, Camera->RenderTarget->SizeY);
 	FVector2D Resolution = CameraArgument.GetResolution(this);
-	View = MakeShared<FFICFeedView>(Camera->RenderTarget->GameThread_GetRenderTargetResource()->GetRenderTargetTexture(), Size);
+	View = MakeShared<FFICDummyViewport>(Camera->RenderTarget->GameThread_GetRenderTargetResource()->GetRenderTargetTexture(), Size);
 
 	Window = SNew(SWindow)[
 		SNew(SViewport)
