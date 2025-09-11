@@ -96,7 +96,13 @@ void FFICGroupAttribute::AddChildAttribute(FString Name, FFICAttribute* Attribut
 }
 
 void FFICGroupAttribute::RemoveChildAttribute(FString Name) {
-	Children[Name]->OnUpdate.Remove(UpdateDelegateHandles[Name]);
-	Children.Remove(Name);
-	UpdateDelegateHandles.Remove(Name);
+	FFICAttribute** Attribute = Children.Find(Name);
+	FDelegateHandle* Handle = UpdateDelegateHandles.Find(Name);
+	if (Handle) {
+		Children[Name]->OnUpdate.Remove(UpdateDelegateHandles[Name]);
+		Children.Remove(Name);
+	}
+	if (Attribute) {
+		UpdateDelegateHandles.Remove(Name);
+	}
 }

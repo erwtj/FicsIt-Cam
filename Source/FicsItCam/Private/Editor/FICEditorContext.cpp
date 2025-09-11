@@ -138,16 +138,20 @@ void UFICEditorContext::UnloadSceneObject(UObject* SceneObject) {
 	if (GetSelectedSceneObject() == SceneObject) SetSelectedSceneObject(nullptr);
 	
 	AllAttributes->RemoveAttribute(FString::FromInt(SceneObject->GetUniqueID()));
-	EditorAttributes[SceneObject]->GetAttribute().OnUpdate.Remove(DataAttributeOnUpdateDelegateHandles[SceneObject]);
-	TFunction<void(TSharedRef<FFICEditorAttributeBase>)> RemoveEditAttrib;
-	RemoveEditAttrib = [this, &RemoveEditAttrib](TSharedRef<FFICEditorAttributeBase> Attrib) {
-		EditorAttributeMap.Remove(&Attrib->GetAttribute());
-		for (const TPair<FString, TSharedRef<FFICEditorAttributeBase>>& Child : Attrib->GetChildAttributes()) {
-			RemoveEditAttrib(Child.Value);
-		}
-	};
-	RemoveEditAttrib(EditorAttributes[SceneObject]);
-	EditorAttributes.Remove(SceneObject);
+	auto attribute = EditorAttributes.Find(SceneObject);
+	if (!attribute) {
+		auto attr = *attribute;
+		attr->GetAttribute().OnUpdate.Remove(DataAttributeOnUpdateDelegateHandles[SceneObject]);
+		TFunction<void(TSharedRef<FFICEditorAttributeBase>)> RemoveEditAttrib;
+		RemoveEditAttrib = [this, &RemoveEditAttrib](TSharedRef<FFICEditorAttributeBase> Attrib) {
+			EditorAttributeMap.Remove(&Attrib->GetAttribute());
+			for (const TPair<FString, TSharedRef<FFICEditorAttributeBase>>& Child : Attrib->GetChildAttributes()) {
+				RemoveEditAttrib(Child.Value);
+			}
+		};
+		RemoveEditAttrib(attr);
+		EditorAttributes.Remove(SceneObject);
+	}
 	DataAttributeOnUpdateDelegateHandles.Remove(SceneObject);
 
 	ActiveSceneObjectManager.UpdateActiveObjects(GetCurrentFrame());
