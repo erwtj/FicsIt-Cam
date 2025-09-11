@@ -1,4 +1,4 @@
-# FicsItCam [![Build Status](https://jenkins.massivebytes.net/job/FicsIt-Cam/job/master/badge/icon)](https://jenkins.massivebytes.net/job/FicsIt-Cam/job/master/)
+# FicsItCam
 
 This Satisfactory mod is mainly intended for Content Creators to allow the creation of beautiful camera animations, timelapse recordings and other camera related things.
 
