@@ -1,6 +1,7 @@
 ﻿#include "Editor/UI/FICEditor.h"
 
 #include "FICConfigurationStruct.h"
+#include "FICUIUtil.h"
 #include "FICUtils.h"
 #include "SButton.h"
 #include "SEditableTextBox.h"
@@ -157,6 +158,20 @@ FMenuBarBuilder SFICEditor::CreateMenuBar() {
 		TabManager->SavePersistentLayout();
 		FSlateApplication::Get().ClearAllUserFocus();
 		AFICEditorSubsystem::GetFICEditorSubsystem(Context->GetScene()->GetWorld())->CloseEditor();
+	}));
+	MenuBarBuilder.AddPullDownMenu(LOCTEXT("File", "File"), LOCTEXT("FileTT", "File Operations"), FNewMenuDelegate::CreateLambda([this](FMenuBuilder& MenuBuilder) {
+		MenuBuilder.AddMenuEntry(LOCTEXT("Export", "Export"), LOCTEXT("ExportTT", "Export this scene as file"), FSlateIcon(), FExecuteAction::CreateLambda([this]() {
+			TOptional<FString> path = FICSaveSceneFileDialog(Context->GetScene()->SceneName);
+			if (path) {
+				Context->GetScene()->SaveToFile(*path);
+			}
+		}));
+		MenuBuilder.AddMenuEntry(LOCTEXT("Import", "Import"), LOCTEXT("ImportTT", "Import a scene from file"), FSlateIcon(), FExecuteAction::CreateLambda([this]() {
+			TOptional<FString> path = FICOpenSceneFileDialog();
+			if (path) {
+				Context->GetScene()->LoadFromFile(*path);
+			}
+		}));
 	}));
 	MenuBarBuilder.AddPullDownMenu(LOCTEXT("View", "View"), LOCTEXT("ViewTT", "Views, Panels & Windows"), FNewMenuDelegate::CreateLambda([this](FMenuBuilder& MenuBuilder) {
 		TabManager->PopulateLocalTabSpawnerMenu(MenuBuilder);

@@ -38,6 +38,7 @@ void UFICProceduralTexture::ReloadData() {
 	PrimaryMipMap.BulkData.Unlock();
 
 	FFunctionGraphTask::CreateAndDispatchWhenReady([this]() {
+		if (Texture == nullptr) return;
 		Texture->UpdateResource();
 		OnTextureUpdate.Broadcast();
 	}, TStatId(), nullptr, ENamedThreads::GameThread);

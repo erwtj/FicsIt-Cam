@@ -8,6 +8,21 @@
 #include "Util/FICProceduralTexture.h"
 #include "FICScene.generated.h"
 
+struct FICSITCAM_API FFICSceneVersion {
+	enum Type {
+		NoVersion,
+
+		InitialVersion,
+
+		VersionPlusOne,
+		LatestVersion = VersionPlusOne - 1
+	};
+
+	inline static const FGuid GUID = FGuid( 0x04730e5a, 0x04414b85, 0xaa76f90a, 0x57a43a21 );
+
+	inline static const TCHAR Name[] = TEXT( "RuntimeBuildableInstanceVersion" );
+};
+
 UCLASS()
 class FICSITCAM_API AFICScene : public AActor, public IFGSaveInterface {
 	GENERATED_BODY()
@@ -96,4 +111,8 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	bool IsSceneAlreadyInUse();
+
+	void SerializeScene(TArray<UObject*>& ObjectsToSave, FArchive& Ar);
+	void SaveToFile(const FString& Path);
+	void LoadFromFile(const FString& Path);
 };

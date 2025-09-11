@@ -1,5 +1,7 @@
 ﻿#include "Editor/UI/FICUIUtil.h"
 
+#include "SlateApplication.h"
+
 FMenuBuilder FICCreateKeyframeTypeChangeMenu(UFICEditorContext* Context, TFunction<TSet<TPair<FFICAttribute*, FICFrame>>()> GetKeyframes) {
 	TFunction<void(EFICKeyframeType)> SetKeyframeType;
 	SetKeyframeType = [GetKeyframes, Context](EFICKeyframeType Type) {
@@ -55,4 +57,71 @@ FMenuBuilder FICCreateKeyframeTypeChangeMenu(UFICEditorContext* Context, TFuncti
         }), FCanExecuteAction::CreateRaw(&FSlateApplication::Get(), &FSlateApplication::IsNormalExecution)));
 
 	return MenuBuilder;
+}
+
+#include "MinWindows.h"
+#include "Microsoft/COMPointer.h"
+#include "Windows/AllowWindowsPlatformTypes.h"
+#include <commdlg.h>
+#include <shellapi.h>
+#include <shlobj.h>
+#include <LM.h>
+#include "Windows/HideWindowsPlatformTypes.h"
+
+#pragma comment( lib, "version.lib" )
+
+TOptional<FString> FileDialog(bool bSave, const FString& Title, const FString& DefaultFile, const FString& DefaultPath) {
+	TComPtr<IFileDialog> FileDialog;
+	if (SUCCEEDED(::CoCreateInstance(
+		bSave ? CLSID_FileSaveDialog : CLSID_FileOpenDialog,
+		nullptr,
+		CLSCTX_INPROC_SERVER,
+		bSave ? IID_IFileSaveDialog : IID_IFileOpenDialog,
+		IID_PPV_ARGS_Helper(&FileDialog)
+	))) {
+		FileDialog->SetTitle(*Title);
+		if (!DefaultFile.IsEmpty()) {
+			FileDialog->SetFileName(*DefaultFile);
+		}
+
+		if (!DefaultPath.IsEmpty()) {
+			FString DefaultWindowsPath = FPaths::ConvertRelativePathToFull(DefaultPath);
+			DefaultWindowsPath.ReplaceInline(TEXT("/"), TEXT("\\"), ESearchCase::CaseSensitive);
+			TComPtr<IShellItem> DefaultPathItem;
+			if (SUCCEEDED(::SHCreateItemFromParsingName(*DefaultWindowsPath, nullptr, IID_PPV_ARGS(&DefaultPathItem)))) {
+				FileDialog->SetFolder(DefaultPathItem);
+			}
+		}
+
+		COMDLG_FILTERSPEC rgSpec[] = {
+			{ TEXT("FicsIt-Cam Scene"), L"*.fic_scene" },
+		};
+		FileDialog->SetFileTypes(1, rgSpec);
+		FileDialog->SetDefaultExtension(TEXT("fic_scene"));
+		if (SUCCEEDED(FileDialog->Show(nullptr))) {
+			TComPtr<IShellItem> Result;
+			if (SUCCEEDED(FileDialog->GetResult(&Result))) {
+				PWSTR pFilePath = nullptr;
+				if (SUCCEEDED(Result->GetDisplayName(SIGDN_FILESYSPATH, &pFilePath))) {
+					FString filePath = pFilePath;
+					::CoTaskMemFree(pFilePath);
+					FPaths::NormalizeFilename(filePath);
+					return filePath;
+				}
+			}
+		}
+	}
+	return {};
+}
+
+TOptional<FString> FICSaveSceneFileDialog(const FString& SceneName) {
+	FString DefaultFile = FString::Printf(TEXT("%ls.fic_scene"), *SceneName);
+	FString DefaultPath = FPlatformProcess::UserDir();
+
+	return FileDialog(true, TEXT("Export FicsIt-Cam Scene..."), DefaultFile, DefaultPath);
+}
+
+TOptional<FString> FICOpenSceneFileDialog() {
+	FString DefaultPath = FPlatformProcess::UserDir();
+	return FileDialog(false, TEXT("Import FicsIt-Cam Scene..."), FString(), DefaultPath);
 }
