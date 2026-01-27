@@ -104,6 +104,8 @@ private:
 
 	TSharedPtr<FFICEditorAttributeBase> Attribute;
 
+	TOptional<FICFrame> ClickedFrame;
+
 public:
 	SFICSequencerRowAttribute();
 
