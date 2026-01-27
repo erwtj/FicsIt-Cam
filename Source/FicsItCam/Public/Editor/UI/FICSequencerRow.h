@@ -2,6 +2,7 @@
 
 #include "DeclarativeSyntaxSupport.h"
 #include "FICEditorStyle.h"
+#include "FICKeyframeIcon.h"
 #include "SCompoundWidget.h"
 #include "SPanel.h"
 #include "Data/FICTypes.h"
@@ -88,40 +89,6 @@ public:
 	static void GetRowBrushAndColor(int32 InIndex, const TAttribute<FLinearColor>& InColorAttribute, const FSlateBrush* InBrushEven, const FSlateBrush* InBrushOdd, const FWidgetStyle& InWidgetStyle, const FSlateBrush*& OutBrush, FLinearColor& OutColor);
 };
 
-
-class SFICSequencerRowAttributeKeyframe : public SCompoundWidget {
-	SLATE_BEGIN_ARGS(SFICSequencerRowAttributeKeyframe) : _Style(&FFICEditorStyles::Get().GetWidgetStyle<FFICSequencerStyle>("Sequencer")) {}
-	SLATE_STYLE_ARGUMENT(FFICSequencerStyle, Style)
-
-	SLATE_ATTRIBUTE(FICFrame, Frame)
-	SLATE_ATTRIBUTE(FFICFrameRange, FrameRange)
-	SLATE_ATTRIBUTE(FFICFrameRange, FrameHighlightRange)
-	SLATE_END_ARGS()
-
-public:
-	void Construct(const FArguments& InArgs, SFICSequencerRowAttribute* InRowAttribute, UFICEditorContext* InContext, FFICAttribute* InAttribute, FICFrame InFrame);
-
-private:
-	SFICSequencerRowAttribute* RowAttribute = nullptr;
-	UFICEditorContext* Context = nullptr;
-	FFICAttribute* Attribute = nullptr;
-	FICFrame Frame = 0;
-
-	const FFICSequencerStyle* Style = nullptr;
-	TAttribute<FICFrame> ActiveFrame;
-	TAttribute<FFICFrameRange> FrameRange;
-	
-public:
-	// Begin SWidget
-	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
-	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
-	virtual FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
-	// End SWidget
-
-	FFICAttribute* GetAttribute() const { return Attribute; }
-	FICFrame GetFrame() const { return Frame; }
-};
-
 class SFICSequencerRowAttribute : public SFICSequencerRow {
 private:
 	SLATE_BEGIN_ARGS(SFICSequencerRowAttribute) : _Style(&FFICEditorStyles::Get().GetWidgetStyle<FFICSequencerStyle>("Sequencer")) {}
@@ -133,25 +100,28 @@ public:
 	void Construct(const FArguments& InArgs, SFICSequencer* InSequencer, TSharedRef<FFICEditorAttributeBase> InAttribute);
 
 private:
-	TSlotlessChildren<SFICSequencerRowAttributeKeyframe> Children;
+	TSlotlessChildren<SWidget> Children;
 
 	TSharedPtr<FFICEditorAttributeBase> Attribute;
-	FDelegateHandle DelegateHandle;
 
 public:
 	SFICSequencerRowAttribute();
-	virtual ~SFICSequencerRowAttribute() override;
 
 	// Begin SWidget
 	virtual FVector2D ComputeDesiredSize(float) const override;
 	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 	virtual FChildren* GetChildren() override;
 	virtual void OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const override;
+	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	// End SWidget
 
-	virtual TArray<TTuple<FFICAttribute&, FICFrame>> GetKeyframesInBox(const FBox2D& InBox) override;
+	// Begin SFICSequencerRow
+	virtual void UpdateFrameRange(FFICFrameRange InFrameRange) override;
+	// End SFICSequencerRow
 
-	void UpdateKeyframes();
+	virtual TArray<TTuple<FFICAttribute&, FICFrame>> GetKeyframesInBox(const FBox2D& InBox) override;
 
 	FFICAttribute* GetAttribute() const;
 		
