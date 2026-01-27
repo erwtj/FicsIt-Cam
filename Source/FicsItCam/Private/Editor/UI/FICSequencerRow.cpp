@@ -133,6 +133,7 @@ FReply SFICSequencerRowAttribute::OnMouseButtonDown(const FGeometry& MyGeometry,
 	FICFrame clickedFrame = LocalToFrame(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X);
 	FICFrame maxDistance = FMath::Abs(LocalToFrame(0) - LocalToFrame(MyGeometry.GetLocalSize().Y))/2;
 	TOptional<FICFrame> frame = Attribute->GetAttribute().GetClosestKeyframe(clickedFrame, maxDistance);
+	ClickedFrame = frame;
 	if (frame) {
 		return FReply::Handled().DetectDrag(AsShared(), EKeys::LeftMouseButton);
 	}
@@ -140,6 +141,7 @@ FReply SFICSequencerRowAttribute::OnMouseButtonDown(const FGeometry& MyGeometry,
 }
 
 FReply SFICSequencerRowAttribute::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
+	ClickedFrame = {};
 	FSelectionManager& SelectionManager = GetSequencer()->GetSelectionManager();
 	FICFrame clickedFrame = LocalToFrame(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X);
 	FICFrame maxDistance = FMath::Abs(LocalToFrame(0) - LocalToFrame(MyGeometry.GetLocalSize().Y))/2;
@@ -163,11 +165,10 @@ FReply SFICSequencerRowAttribute::OnMouseButtonUp(const FGeometry& MyGeometry, c
 
 FReply SFICSequencerRowAttribute::OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
 	if (MouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton)) {
-		FICFrame clickedFrame = LocalToFrame(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X);
-		FICFrame maxDistance = FMath::Abs(LocalToFrame(0) - LocalToFrame(MyGeometry.GetLocalSize().Y))/2;
-		TOptional<FICFrame> frame = Attribute->GetAttribute().GetClosestKeyframe(clickedFrame, maxDistance);
-		if (frame) {
-			if (!GetSequencer()->GetSelectionManager().IsKeyframeSelected(Attribute->GetAttribute(), *frame)) GetSequencer()->GetSelectionManager().SetSelection({TPair<FFICAttribute*, FICFrame>(&Attribute->GetAttribute(), *frame)});
+		if (ClickedFrame) {
+			FICFrame frame = *ClickedFrame;
+			ClickedFrame = {};
+			if (!GetSequencer()->GetSelectionManager().IsKeyframeSelected(Attribute->GetAttribute(), frame)) GetSequencer()->GetSelectionManager().SetSelection({TPair<FFICAttribute*, FICFrame>(&Attribute->GetAttribute(), frame)});
 			return FReply::Handled().BeginDragDrop(MakeShared<FFICSequencerKeyframeDragDrop>(GetSequencer(), MouseEvent));
 		}
 	}
