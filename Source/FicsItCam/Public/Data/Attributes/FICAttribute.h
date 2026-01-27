@@ -53,7 +53,7 @@ public:
 		return Keyframes;
 	}
 
-	void RecalculateAllKeyframes();
+	virtual void RecalculateAllKeyframes();
 
 	TOptional<FICFrame> GetClosestKeyframe(FICFrame Time, FICFrame MaxDistance);
 

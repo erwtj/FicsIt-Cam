@@ -1,5 +1,6 @@
 #include "Editor/UI/FICDragDrop.h"
 
+#include "FicsItCamModule.h"
 #include "Editor/FICChangeList.h"
 #include "Editor/FICEditorContext.h"
 #include "Editor/UI/FICSequencer.h"
@@ -212,11 +213,14 @@ FFICSequencerKeyframeDragDrop::FFICSequencerKeyframeDragDrop(TSharedRef<SFICSequ
 }
 
 void FFICSequencerKeyframeDragDrop::OnDragged(const FDragDropEvent& DragDropEvent) {
-	FFICSequencerDragDrop::OnDragged(DragDropEvent);
-	
-	CumulativeTimeDiff = Sequencer->GetFramePerLocal() * CumulativeLocalDiff.X;
+	double StartTime = FPlatformTime::Seconds();
 
-	for (TTuple<FFICAttribute*, TSharedRef<FFICAttribute>> Snapshot : OldAttributeState) {
+	FFICSequencerDragDrop::OnDragged(DragDropEvent);
+
+	CumulativeTimeDiff = Sequencer->GetFramePerLocal() * CumulativeLocalDiff.X;
+	int32 Step = (CumulativeTimeDiff>0) ? -1 : 1;
+
+	for (const TTuple<FFICAttribute*, TSharedRef<FFICAttribute>>& Snapshot : OldAttributeState) {
 		Snapshot.Key->CopyFrom(Snapshot.Value);
 	}
 
@@ -229,7 +233,6 @@ void FFICSequencerKeyframeDragDrop::OnDragged(const FDragDropEvent& DragDropEven
 		Movement.Key->LockUpdateEvent();
 		TMap<FICFrame, TSharedRef<FFICKeyframe>> Keyframes = Movement.Key->GetKeyframes();
 		Movement.Value.Sort();
-		int32 Step = (CumulativeTimeDiff>0) ? -1 : 1;
 		for (int32 Index = (Step<0) ? Movement.Value.Num()-1 : 0; Movement.Value.IsValidIndex(Index); Index += Step) {
 			Movement.Key->MoveKeyframe(Movement.Value[Index], Movement.Value[Index] + CumulativeTimeDiff);
 			Selection.Add(TPair<FFICAttribute*, FICFrame>(Movement.Key, Movement.Value[Index] + CumulativeTimeDiff));
@@ -238,6 +241,9 @@ void FFICSequencerKeyframeDragDrop::OnDragged(const FDragDropEvent& DragDropEven
 		Movement.Key->UnlockUpdateEvent();
 	}
 	Sequencer->GetSelectionManager().SetSelection(Selection);
+
+	double Millis = (FPlatformTime::Seconds() - StartTime) * 1000.0;
+//	UE_LOG(LogFicsItCam, Display, TEXT("FFICSequencerKeyframeDragDrop: %.3fms"), Millis);
 }
 
 void FFICSequencerKeyframeDragDrop::OnDrop(bool bDropWasHandled, const FPointerEvent& MouseEvent) {

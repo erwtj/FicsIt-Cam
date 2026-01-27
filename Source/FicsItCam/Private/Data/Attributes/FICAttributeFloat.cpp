@@ -39,21 +39,68 @@ void FFICFloatAttribute::RecalculateKeyframe(FICFrame Time) {
 	FFICFloatKeyframe* CurrentKeyframe = Keyframes.Find(Time);
 	if (!CurrentKeyframe) return;
 
+	RecalculateKeyframe(Time, CurrentKeyframe);
+
+	OnUpdateBroadcast();
+}
+
+void FFICFloatAttribute::RecalculateAllKeyframes() {
+	Keyframes.KeySort([](const FICFrame& A, const FICFrame& B) { return A < B; });
+
+	for (size_t i = 0; i < Keyframes.Num(); ++i) {
+		auto& [frame, keyframe] = Keyframes.Get(FSetElementId::FromInteger(i));
+		if (i > 0) {
+			const auto& [prevFrame, prevKeyframe] = Keyframes.Get(FSetElementId::FromInteger(i-1));
+			if (i+1 < Keyframes.Num()) {
+				const auto& [nextFrame, nextKeyframe] = Keyframes.Get(FSetElementId::FromInteger(i+1));
+				RecalculateKeyframe(frame, &keyframe, prevFrame, prevKeyframe.Value, nextFrame, nextKeyframe.Value);
+			} else {
+				RecalculateKeyframe(frame, &keyframe, prevFrame, prevKeyframe.Value, 0, {});
+			}
+		} else {
+			if (i+1 < Keyframes.Num()) {
+				const auto& [nextFrame, nextKeyframe] = Keyframes.Get(FSetElementId::FromInteger(i+1));
+				RecalculateKeyframe(frame, &keyframe, 0, {}, nextFrame, nextKeyframe.Value);
+			} else {
+				RecalculateKeyframe(frame, &keyframe, 0, {}, 0, {});
+			}
+		}
+	}
+
+	OnUpdateBroadcast();
+}
+
+void FFICFloatAttribute::RecalculateKeyframe(FICFrame Time, FFICFloatKeyframe* Keyframe) {
 	FICFrame PTime;
-	FFICFloatKeyframe* PK = StaticCastSharedPtr<FFICFloatKeyframeTrampoline>(GetPrevKeyframe(Time, PTime)).Get()->GetKeyframe();
+	TOptional<float> PK;
+	if (auto keyframe = StaticCastSharedPtr<FFICFloatKeyframeTrampoline>(GetPrevKeyframe(Time, PTime))) {
+		if (auto kf = keyframe.Get()->GetKeyframe()) {
+			PK = kf->Value;
+		}
+	}
 	int64 NTime;
-	FFICFloatKeyframe* NK = StaticCastSharedPtr<FFICFloatKeyframeTrampoline>(GetNextKeyframe(Time, NTime)).Get()->GetKeyframe();
-	
-	if (!CurrentKeyframe) return;
+	TOptional<float> NK;
+	if (auto keyframe = StaticCastSharedPtr<FFICFloatKeyframeTrampoline>(GetNextKeyframe(Time, NTime))) {
+		if (auto kf = keyframe.Get()->GetKeyframe()) {
+			NK = kf->Value;
+		}
+	}
+
+	RecalculateKeyframe(Time, Keyframe, PTime, PK, NTime, NK);
+}
+
+void FFICFloatAttribute::RecalculateKeyframe(FICFrame Time, FFICFloatKeyframe* CurrentKeyframe, FICFrame PTime, TOptional<float> PK, FICFrame NTime, TOptional<float> NK) {
 	if (CurrentKeyframe->KeyframeType & (FIC_KF_CUSTOM | FIC_KF_LINEAR | FIC_KF_MIRROR | FIC_KF_STEP) & ~FIC_KF_HANDLES) return;
 	float Factor = 1.0/3.0;
 	//Factor = 0.5;
 	if (PK) {
+		float PKval = *PK;
 		float PKTimeDiff = Time - PTime;
-		float PKValueDiff = CurrentKeyframe->Value - PK->Value;
+		float PKValueDiff = CurrentKeyframe->Value - PKval;
 		if (NK) {
+			float NKval = *NK;
 			float NKTimeDiff = NTime - Time;
-			float NKValueDiff = NK->Value - CurrentKeyframe->Value;
+			float NKValueDiff = NKval - CurrentKeyframe->Value;
 			float KValueDiff = (PKValueDiff + NKValueDiff) / 2.0;
 			float KTimeDiff = NTime - PTime;
 
@@ -66,11 +113,11 @@ void FFICFloatAttribute::RecalculateKeyframe(FICFrame Time) {
 			float Pitch = (PKValueDiff/PKTimeDiff) * (1-Ratio) + (NKValueDiff/NKTimeDiff) * Ratio;
 			
 			if (CurrentKeyframe->KeyframeType == FIC_KF_EASE) {
-				if ((CurrentKeyframe->Value < PK->Value && CurrentKeyframe->Value < NK->Value) || (CurrentKeyframe->Value > PK->Value && CurrentKeyframe->Value > NK->Value)) {
+				if ((CurrentKeyframe->Value < PKval && CurrentKeyframe->Value < NKval) || (CurrentKeyframe->Value > PKval && CurrentKeyframe->Value > NKval)) {
 					CurrentKeyframe->InTanValue = CurrentKeyframe->OutTanValue = 0;
 				} else {
-					CurrentKeyframe->InTanValue = FMath::Clamp(CurrentKeyframe->Value - Pitch * CurrentKeyframe->InTanTime, FMath::Min(PK->Value, NK->Value), FMath::Max(PK->Value, NK->Value)) - CurrentKeyframe->Value;
-					CurrentKeyframe->OutTanValue = FMath::Clamp(CurrentKeyframe->Value + Pitch * CurrentKeyframe->OutTanTime, FMath::Min(PK->Value, NK->Value), FMath::Max(PK->Value, NK->Value)) - CurrentKeyframe->Value;
+					CurrentKeyframe->InTanValue = FMath::Clamp(CurrentKeyframe->Value - Pitch * CurrentKeyframe->InTanTime, FMath::Min(PKval, NKval), FMath::Max(PKval, NKval)) - CurrentKeyframe->Value;
+					CurrentKeyframe->OutTanValue = FMath::Clamp(CurrentKeyframe->Value + Pitch * CurrentKeyframe->OutTanTime, FMath::Min(PKval, NKval), FMath::Max(PKval, NKval)) - CurrentKeyframe->Value;
 					float InPitch = -CurrentKeyframe->InTanValue/CurrentKeyframe->InTanTime;
 					float OutPitch = CurrentKeyframe->OutTanValue/CurrentKeyframe->OutTanTime;
 					Pitch = FMath::Abs(InPitch) < FMath::Abs(OutPitch) ? InPitch : OutPitch;
@@ -91,8 +138,9 @@ void FFICFloatAttribute::RecalculateKeyframe(FICFrame Time) {
 		}
 	} else {
 		if (NK) {
+			float NKval = *NK;
 			float NKTimeDiff = NTime - Time;
-			float NKValueDiff = NK->Value - CurrentKeyframe->Value;
+			float NKValueDiff = NKval - CurrentKeyframe->Value;
 		
 			if (CurrentKeyframe->KeyframeType == FIC_KF_EASE) {
 				CurrentKeyframe->OutTanTime = CurrentKeyframe->OutTanValue = 0;
@@ -102,7 +150,6 @@ void FFICFloatAttribute::RecalculateKeyframe(FICFrame Time) {
 			}
 		}
 	}
-	OnUpdateBroadcast();
 }
 
 FICValue FFICFloatAttribute::GetFloatValue(FICFrameFloat Time) {
