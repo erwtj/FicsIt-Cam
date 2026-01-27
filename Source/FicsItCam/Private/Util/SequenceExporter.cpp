@@ -9,14 +9,18 @@
 #include "Paths.h"
 
 #if PLATFORM_WINDOWS
-FSequenceMP4Exporter::FSequenceMP4Exporter(FIntPoint InImageSize, int FPS, FString InPath) : ImageSize(InImageSize), FPS(FPS), Path(InPath) {}
+FSequenceMP4Exporter::FSequenceMP4Exporter(FIntPoint InImageSize, int FPS, FString InPath, int AudioSampleRate) : ImageSize(InImageSize), FPS(FPS), Path(InPath), AudioSampleRate(AudioSampleRate) {}
 
 FSequenceMP4Exporter::~FSequenceMP4Exporter() {
+	if (VideoCodecContext) avcodec_free_context(&VideoCodecContext);
+	if (AudioCodecContext) avcodec_free_context(&AudioCodecContext);
+	if (VideoFrame) av_frame_free(&VideoFrame);
+	if (AudioFrame) av_frame_free(&AudioFrame);
+	if (VideoPacket) av_packet_free(&VideoPacket);
+	if (AudioPacket) av_packet_free(&AudioPacket);
 	if (SwsContext) sws_freeContext(SwsContext);
+	if (SwrContext) swr_free(&SwrContext);
 	if (FormatContext->pb) avio_closep(&FormatContext->pb);
-	if (Frame) av_frame_free(&Frame);
-	if (CodecContext) avcodec_free_context(&CodecContext);
-	if (Packet) av_packet_free(&Packet);
 	if (FormatContext) avformat_free_context(FormatContext);
 }
 
@@ -29,91 +33,200 @@ FString ffmpeg_err2str_func(int ret) {
 #define ffmpeg_err2str(ret) *ffmpeg_err2str_func(ret)
 
 bool FSequenceMP4Exporter::Init() {
+	int ret;
+
 	FTCHARToUTF8 FilePath(*Path, Path.Len());
 	std::string FilePathStr = std::string(FilePath.Get(), FilePath.Length());
+
+	// Find Output Format Context by file-ending otherwise use mpeg
+	{
+		ret = avformat_alloc_output_context2(&FormatContext, NULL, NULL, FilePathStr.c_str());
+		if (!FormatContext) {
+			ret = avformat_alloc_output_context2(&FormatContext, NULL, "mpeg", FilePathStr.c_str());
+		}
+		if (ret < 0 || !FormatContext) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create format context: %s"), ffmpeg_err2str((ret)));
+			return false;
+		}
+	}
+
+	// Create Video Stream & associated Settings (VideoCodecContext)
+	{
+		VideoCodec = avcodec_find_encoder(FormatContext->oformat->video_codec);
+		if (!VideoCodec) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to get video codec from format context."));
+			return false;
+		}
+
+		VideoPacket = av_packet_alloc();
+		if (!VideoPacket) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create video codec output packet."));
+			return false;
+		}
+
+		VideoStream = avformat_new_stream(FormatContext, VideoCodec);
+		if (!VideoStream) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create video stream for format context."));
+			return false;
+		}
+		VideoStream->id = FormatContext->nb_streams-1;
+
+		VideoCodecContext = avcodec_alloc_context3(VideoCodec);
+		if (!VideoCodecContext) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create video codec context for video codec."));
+			return false;
+		}
+		// CodecContext->codec_id = FormatContext->oformat->video_codec; /// Nötig???
+		//CodecContext->bit_rate = 40000000;
+		VideoCodecContext->width = ImageSize.X;
+		VideoCodecContext->height = ImageSize.Y;
+		VideoStream->time_base = AVRational{1, FPS};
+		VideoCodecContext->time_base = VideoStream->time_base;
+		//CodecContext->framerate = AVRational{FPS, 1}; // Not needed with mux?
+		//CodecContext->gop_size = 12;
+		VideoCodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
+		/*if (CodecContext->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
+			CodecContext->max_b_frames = 2;
+		}
+		if (CodecContext->codec_id == AV_CODEC_ID_MPEG1VIDEO) {
+			CodecContext->mb_decision = 2;
+		}
+		if (FormatContext->oformat->flags & AVFMT_GLOBALHEADER)
+			CodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;*/
+		if (FormatContext->oformat->flags & AVFMT_GLOBALHEADER)
+			VideoCodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+	}
+
+	// Create Audio Stream & associated Settings/Objects
+	{
+		AudioCodec = avcodec_find_encoder(FormatContext->oformat->audio_codec);
+		if (!AudioCodec) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to get audio codec from format context."));
+			return false;
+		}
+
+		AudioPacket = av_packet_alloc();
+		if (!AudioPacket) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create audio codec output packet."));
+			return false;
+		}
+
+		AudioStream = avformat_new_stream(FormatContext, AudioCodec);
+		if (!AudioStream) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create audio stream for format context."));
+			return false;
+		}
+		AudioStream->id = FormatContext->nb_streams-1;
+
+		AudioCodecContext = avcodec_alloc_context3(AudioCodec);
+		if (!AudioCodecContext) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create audio codec context for audio codec."));
+			return false;
+		}
+		AudioCodecContext->sample_fmt = AudioCodec->sample_fmts ? AudioCodec->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
+		AudioCodecContext->bit_rate = 64000;
+		AudioCodecContext->sample_rate = AudioSampleRate;
+		if (AudioCodec->supported_samplerates) {
+			AudioCodecContext->sample_rate = AudioCodec->supported_samplerates[0];
+			for (int i = 0; AudioCodec->supported_samplerates[i]; ++i) {
+				if (AudioCodec->supported_samplerates[i] == AudioSampleRate) {
+					AudioCodecContext->sample_rate = AudioSampleRate;
+				}
+			}
+		}
+		AVChannelLayout layout AV_CHANNEL_LAYOUT_STEREO;
+		av_channel_layout_copy(&AudioCodecContext->ch_layout, &layout);
+		AudioStream->time_base = AVRational{1, AudioCodecContext->sample_rate};
+		if (FormatContext->oformat->flags & AVFMT_GLOBALHEADER)
+			AudioCodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+	}
+
+	// Open and Init Video Stream
+	{
+		ret = avcodec_open2(VideoCodecContext, VideoCodec, NULL);
+		if (ret < 0) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to open video codec for video codec context: %s"), ffmpeg_err2str(ret));
+			return false;
+		}
+
+		VideoFrame = av_frame_alloc();
+		if (!VideoFrame) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create sws2codec video frame."));
+			return false;
+		}
+		VideoFrame->format = VideoCodecContext->pix_fmt;
+		VideoFrame->width = VideoCodecContext->width;
+		VideoFrame->height = VideoCodecContext->height;
+
+		ret = av_frame_get_buffer(VideoFrame, 0);
+		if (ret < 0) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to allocate sws2codec video frame buffers: %s"), ffmpeg_err2str(ret));
+			return false;
+		}
+
+		ret = avcodec_parameters_from_context(VideoStream->codecpar, VideoCodecContext);
+		if (ret < 0) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to set video stream settings to video codec context settings: %s"), ffmpeg_err2str(ret));
+			exit(1);
+		}
+	}
+
+	// Open and Init Audio Stream
+	{
+		ret = avcodec_open2(AudioCodecContext, AudioCodec, NULL);
+		if (ret < 0) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to open audio codec for audio codec context: %s"), ffmpeg_err2str(ret));
+			return false;
+		}
+
+		AudioFrame = av_frame_alloc();
+		if (!AudioFrame) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create sws2codec audio frame."));
+			return false;
+		}
+		AudioFrame->format = AudioCodecContext->sample_fmt;
+		av_channel_layout_copy(&AudioFrame->ch_layout, &AudioCodecContext->ch_layout);
+		AudioFrame->sample_rate = AudioCodecContext->sample_rate;
+		AudioFrame->nb_samples = AudioCodecContext->frame_size;
+
+		if (AudioFrame->nb_samples) {
+			ret = av_frame_get_buffer(AudioFrame, 0);
+			if (ret < 0) {
+				UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to allocate sws2codec audio frame buffers: %s"), ffmpeg_err2str(ret));
+				return false;
+			}
+		}
+
+		ret = avcodec_parameters_from_context(AudioStream->codecpar, AudioCodecContext);
+		if (ret < 0) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to set audio stream settings to audio codec context settings: %s"), ffmpeg_err2str(ret));
+			exit(1);
+		}
+	}
 	
-	int ret = avformat_alloc_output_context2(&FormatContext, NULL, NULL, FilePathStr.c_str());
-	if (!FormatContext) {
-		ret = avformat_alloc_output_context2(&FormatContext, NULL, "mpeg", FilePathStr.c_str());
-	}
-	if (ret < 0 || !FormatContext) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create format context: %s"), ffmpeg_err2str((ret)));
-		return false;
-	}
-	
-	VideoCodec = avcodec_find_encoder(FormatContext->oformat->video_codec);
-	if (!VideoCodec) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to get video codec from format context."));
-		return false;
-	}
-
-	Packet = av_packet_alloc();
-	if (!Packet) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create codec output packet."));
-		return false;
-	}
-
-	VideoStream = avformat_new_stream(FormatContext, NULL);
-	if (!VideoStream) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create video stream for format context."));
-		return false;
-	}
-	VideoStream->id = FormatContext->nb_streams-1;
-
-	CodecContext = avcodec_alloc_context3(VideoCodec);
-	if (!CodecContext) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create video codec context for video codec."));
-		return false;
-	}
-	// CodecContext->codec_id = FormatContext->oformat->video_codec; /// Nötig???
-	//CodecContext->bit_rate = 40000000;
-	CodecContext->width = ImageSize.X;
-	CodecContext->height = ImageSize.Y;
-	VideoStream->time_base = AVRational{1, FPS};
-	CodecContext->time_base = VideoStream->time_base;
-	//CodecContext->framerate = AVRational{FPS, 1}; // Not needed with mux?
-	//CodecContext->gop_size = 12;
-	CodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
-	/*if (CodecContext->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
-		CodecContext->max_b_frames = 2;
-	}
-	if (CodecContext->codec_id == AV_CODEC_ID_MPEG1VIDEO) {
-		CodecContext->mb_decision = 2;
-	}
-	if (FormatContext->oformat->flags & AVFMT_GLOBALHEADER)
-		CodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;*/
-
-	ret = avcodec_open2(CodecContext, VideoCodec, NULL);
-	if (ret < 0) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to open video codec for video codec context: %s"), ffmpeg_err2str(ret));
-		return false;
-	}
-
-	Frame = av_frame_alloc();
-	if (!Frame) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create sws2codec frame."));
-		return false;
-	}
-	Frame->format = CodecContext->pix_fmt;
-	Frame->width = CodecContext->width;
-	Frame->height = CodecContext->height;
-
-	ret = av_frame_get_buffer(Frame, 0);
-	if (ret < 0) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to allocate sws2codec frame buffers: %s"), ffmpeg_err2str(ret));
-		return false;
-	}
-	
-	ret = avcodec_parameters_from_context(VideoStream->codecpar, CodecContext);
-	if (ret < 0) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to set video stream settings to video codec context settings: %s"), ffmpeg_err2str(ret));
-		return false;
-	}
-	
-	SwsContext = sws_getContext(CodecContext->width, CodecContext->height, AV_PIX_FMT_RGBA, CodecContext->width, CodecContext->height, CodecContext->pix_fmt, SWS_BICUBIC, NULL, NULL, NULL);
+	SwsContext = sws_getContext(VideoCodecContext->width, VideoCodecContext->height, AV_PIX_FMT_RGBA, VideoCodecContext->width, VideoCodecContext->height, VideoCodecContext->pix_fmt, SWS_BICUBIC, NULL, NULL, NULL);
 	if (!SwsContext) {
 		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create sws context for color space conversion."));
 		return false;
+	}
+
+	SwrContext = swr_alloc();
+	if (!SwrContext) {
+		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create swr context for audio sample rate conversion."));
+		return false;
+	}
+
+	av_opt_set_chlayout  (SwrContext, "in_chlayout",       &AudioCodecContext->ch_layout,      0);
+	av_opt_set_int       (SwrContext, "in_sample_rate",     AudioSampleRate,    0);
+	av_opt_set_sample_fmt(SwrContext, "in_sample_fmt",      AV_SAMPLE_FMT_FLT, 0);
+	av_opt_set_chlayout  (SwrContext, "out_chlayout",      &AudioCodecContext->ch_layout,      0);
+	av_opt_set_int       (SwrContext, "out_sample_rate",    AudioCodecContext->sample_rate,    0);
+	av_opt_set_sample_fmt(SwrContext, "out_sample_fmt",     AudioCodecContext->sample_fmt,     0);
+
+	/* initialize the resampling context */
+	if ((ret = swr_init(SwrContext)) < 0) {
+		fprintf(stderr, "Failed to initialize the resampling context\n");
+		exit(1);
 	}
 
 	ret = avio_open(&FormatContext->pb, FilePathStr.c_str(), AVIO_FLAG_WRITE);
@@ -133,6 +246,25 @@ bool FSequenceMP4Exporter::Init() {
 
 void FSequenceMP4Exporter::Finish() {
 	FSequenceExporter::Finish();
+
+	// Flush delayed packets from encoders (important for H.264/AAC and MP4)
+	if (VideoCodecContext && VideoPacket) {
+		int ret = avcodec_send_frame(VideoCodecContext, nullptr);
+		if (ret < 0) {
+			UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to flush video encoder: %s"), ffmpeg_err2str(ret));
+		}
+
+		ReadVideoBuffer();
+	}
+
+	if (AudioCodecContext && AudioPacket) {
+		int ret = avcodec_send_frame(AudioCodecContext, nullptr); // signal EOF
+		if (ret < 0) {
+			UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to flush audio encoder: %s"), ffmpeg_err2str(ret));
+		}
+
+		ReadAudioBuffer();
+	}
 	
 	int ret = av_write_trailer(FormatContext);
 	if (ret < 0) {
@@ -143,48 +275,96 @@ void FSequenceMP4Exporter::Finish() {
 void FSequenceMP4Exporter::AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size) {
 	if (bFinished) return;
 
-	int64 FramePts = FrameNr++;
+	int64 FramePts = VideoFrameNr++;
 	
-	int ret = av_frame_make_writable(Frame);
+	int ret = av_frame_make_writable(VideoFrame);
 	if (ret < 0) {
-		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to mark video frame as writeable for sws (skip frame %lld): %hs"), FramePts, ffmpeg_err2str(ret));
+		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to mark video frame as writeable for sws (skip frame %lld): %s"), FramePts, ffmpeg_err2str(ret));
 		return;
 	}
 
 	const uint8* data[] = {(uint8*)ptr, NULL};
 	int stride[] = {ReadSize.X*4, 0};
 		
-	ret = sws_scale(SwsContext, data, stride, 0, CodecContext->height, Frame->data, Frame->linesize);
+	ret = sws_scale(SwsContext, data, stride, 0, VideoCodecContext->height, VideoFrame->data, VideoFrame->linesize);
 	if (ret < 0) {
-		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to convert video color spaces using sws context (skip frame %lld): %hs"), FramePts, ffmpeg_err2str(ret));
+		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to convert video color spaces using sws context (skip frame %lld): %s"), FramePts, ffmpeg_err2str(ret));
 		return;
 	}
 	
-	ret = avcodec_send_frame(CodecContext,  Frame);
+	ret = avcodec_send_frame(VideoCodecContext,  VideoFrame);
 	if (ret < 0) {
-		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to send video frame to encoding (skip frame %lld): %hs"), FramePts, ffmpeg_err2str(ret));
+		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to send video frame to encoding (skip frame %lld): %s"), FramePts, ffmpeg_err2str(ret));
 		return;
 	}
 	
-	Frame->pts = FramePts;
+	VideoFrame->pts = FramePts;
 	
-	ReadBuffer();
+	ReadVideoBuffer();
 }
 
-void FSequenceMP4Exporter::ReadBuffer() {
+void FSequenceMP4Exporter::AddAudioFrame(float* Samples, int SampleCount) {
+	if (bFinished) return;
+
+	uint64 nb_samples = swr_get_delay(SwrContext, AudioCodecContext->sample_rate) + AudioFrame->nb_samples;
+
+	int ret = av_frame_make_writable(AudioFrame);
+	if (ret < 0) {
+		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to mark audio frame as writeable for sws (skip frame): %s"), ffmpeg_err2str(ret));
+		return;
+	}
+
+	const uint8_t* srcData[3] = {(const uint8_t*)Samples, NULL};
+	nb_samples = swr_convert(SwrContext, AudioFrame->data, nb_samples, srcData, SampleCount);
+
+	uint64 audioSampleCount = AudioSampleCount;
+	AudioFrame->nb_samples = nb_samples;
+	AudioFrame->pts = av_rescale_q(AudioSampleCount, AVRational{1, AudioCodecContext->sample_rate}, AudioCodecContext->time_base);
+	AudioSampleCount += nb_samples;
+
+	ret = avcodec_send_frame(AudioCodecContext, AudioFrame);
+	if (ret < 0) {
+		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to send audio frame to encoding (skip samples [%lld - %lld]): %s"), audioSampleCount, AudioSampleCount, ffmpeg_err2str(ret));
+	}
+
+	ReadAudioBuffer();
+}
+
+void FSequenceMP4Exporter::ReadVideoBuffer() {
 	int ret = 0;
 	while (ret >= 0) {
-		ret = avcodec_receive_packet(CodecContext, Packet);
+		ret = avcodec_receive_packet(VideoCodecContext, VideoPacket);
 		if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
 		else if (ret < 0) {
-			UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to receive encoded video data packet (skip packet, may corrupt output file): %hs"), ffmpeg_err2str(ret));
+			UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to receive encoded video data packet (skip packet, may corrupt output file): %s"), ffmpeg_err2str(ret));
 			return;
 		}
-		av_packet_rescale_ts(Packet, CodecContext->time_base, VideoStream->time_base);
-		Packet->stream_index = VideoStream->index;
-		ret = av_interleaved_write_frame(FormatContext, Packet);
+		av_packet_rescale_ts(VideoPacket, VideoCodecContext->time_base, VideoStream->time_base);
+		VideoPacket->stream_index = VideoStream->index;
+		ret = av_interleaved_write_frame(FormatContext, VideoPacket);
+		av_packet_unref(VideoPacket);
 		if (ret < 0) {
-			UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to write encoded video data packet to output format and file (skip packet, may corrupt output file): %hs"), ffmpeg_err2str(ret));
+			UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to write encoded video data packet to output format and file (skip packet, may corrupt output file): %s"), ffmpeg_err2str(ret));
+			return;
+		}
+	}
+}
+
+void FSequenceMP4Exporter::ReadAudioBuffer() {
+	int ret = 0;
+	while (ret >= 0) {
+		ret = avcodec_receive_packet(AudioCodecContext, AudioPacket);
+		if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
+		else if (ret < 0) {
+			UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to receive encoded audio data packet (skip packet, may corrupt output file): %s"), ffmpeg_err2str(ret));
+			return;
+		}
+		av_packet_rescale_ts(AudioPacket, AudioCodecContext->time_base, AudioStream->time_base);
+		AudioPacket->stream_index = AudioStream->index;
+		ret = av_interleaved_write_frame(FormatContext, AudioPacket);
+		av_packet_unref(AudioPacket);
+		if (ret < 0) {
+			UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to write encoded audio data packet to output format and file (skip packet, may corrupt output file): %s"), ffmpeg_err2str(ret));
 			return;
 		}
 	}

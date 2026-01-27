@@ -251,9 +251,10 @@ void AFICSubsystem::HandleRenderRequest(TSharedPtr<FFICRenderRequest> InRequest)
 			FMemory::Free(ptrLinearColor);
 		} else {
 			InRequest->Exporter->AddFrame(PF_R8G8B8A8, data, ReadSize, Size);
-	}
+		}
 	});
 	FlushRenderingCommands();
+	if (InRequest->ExtraFunc) InRequest->ExtraFunc();
 }
 
 TSet<AFICScene*> AFICSubsystem::GetScenes() const {

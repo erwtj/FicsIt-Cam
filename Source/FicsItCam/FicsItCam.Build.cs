@@ -26,12 +26,18 @@ public class FicsItCam : ModuleRules
             "ImageWrapper",
             "Niagara",
             "EnhancedInput",
+            "WwiseSoundEngine",
 		});
 			
         PublicDependencyModuleNames.AddRange(new string[]
         {
 	        "FactoryGame",
 	        "SML"
+        });
+
+        PrivateDependencyModuleNames.AddRange(new string[]
+        {
+	        "AbstractInstance"
         });
 
         if (Target.Platform == UnrealTargetPlatform.Win64)
@@ -47,13 +53,10 @@ public class FicsItCam : ModuleRules
 	        PublicDelayLoadDLLs.Add("swscale-7.dll");
 	        PublicDelayLoadDLLs.Add("swresample-4.dll");
 	        PublicDelayLoadDLLs.Add("avutil-58.dll");
-	        RuntimeDependencies.Add("$(BinaryOutputDir)\\avcodec-60.dll",
-		        Path.Combine(libraryFolder, "avcodec-60.dll"));
-	        RuntimeDependencies.Add("$(BinaryOutputDir)\\avformat-60.dll",
-		        Path.Combine(libraryFolder, "avformat-60.dll"));
+	        RuntimeDependencies.Add("$(BinaryOutputDir)\\avcodec-60.dll", Path.Combine(libraryFolder, "avcodec-60.dll"));
+	        RuntimeDependencies.Add("$(BinaryOutputDir)\\avformat-60.dll", Path.Combine(libraryFolder, "avformat-60.dll"));
 	        RuntimeDependencies.Add("$(BinaryOutputDir)\\swscale-7.dll", Path.Combine(libraryFolder, "swscale-7.dll"));
-	        RuntimeDependencies.Add("$(BinaryOutputDir)\\swresample-4.dll",
-		        Path.Combine(libraryFolder, "swresample-4.dll"));
+	        RuntimeDependencies.Add("$(BinaryOutputDir)\\swresample-4.dll", Path.Combine(libraryFolder, "swresample-4.dll"));
 	        RuntimeDependencies.Add("$(BinaryOutputDir)\\avutil-58.dll", Path.Combine(libraryFolder, "avutil-58.dll"));
 	        PublicAdditionalLibraries.Add(Path.Combine(libraryFolder, "avcodec.lib"));
 	        PublicAdditionalLibraries.Add(Path.Combine(libraryFolder, "avformat.lib"));

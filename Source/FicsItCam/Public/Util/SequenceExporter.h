@@ -5,6 +5,8 @@ extern "C" {
 	#include "libavcodec/avcodec.h"
 	#include "libavformat/avformat.h"
 	#include "libswscale/swscale.h"
+	#include "libswresample/swresample.h"
+	#include "libavutil/opt.h"
 }
 #endif
 
@@ -35,23 +37,34 @@ private:
 	FString Path;
 	AVFormatContext* FormatContext = nullptr;
 	AVStream* VideoStream = nullptr;
+	AVStream* AudioStream = nullptr;
 	const AVCodec* VideoCodec = nullptr;
-	AVCodecContext* CodecContext = nullptr;
-	AVFrame* Frame = nullptr;
-	AVPacket* Packet = nullptr;
+	const AVCodec* AudioCodec = nullptr;
+	AVCodecContext* VideoCodecContext = nullptr;
+	AVCodecContext* AudioCodecContext = nullptr;
+	AVPacket* VideoPacket = nullptr;
+	AVPacket* AudioPacket = nullptr;
+	AVFrame* VideoFrame = nullptr;
+	AVFrame* AudioFrame = nullptr;
 	SwsContext* SwsContext = nullptr;
+	SwrContext* SwrContext = nullptr;
 	IFileHandle* File = nullptr;
-	int64 FrameNr = 0;
+	int64 VideoFrameNr = 0;
+	uint64 AudioSampleCount = 0;
+	int AudioSampleRate = 44100;
 	
 public:
-	FSequenceMP4Exporter(FIntPoint ImageSize, int FPS, FString InPath);
+	FSequenceMP4Exporter(FIntPoint ImageSize, int FPS, FString InPath, int AudioSampleRate);
 	~FSequenceMP4Exporter();
 	
 	virtual bool Init() override;
 	virtual void AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size) override;
 	virtual void Finish() override;
+
+	void AddAudioFrame(float* Samples, int SampleCount);
 	
-	void ReadBuffer();
+	void ReadVideoBuffer();
+	void ReadAudioBuffer();
 };
 #endif
 

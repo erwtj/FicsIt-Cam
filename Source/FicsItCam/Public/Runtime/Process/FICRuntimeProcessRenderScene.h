@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "WwiseSoundEngineAPI.h"
 #include "CanvasTypes.h"
 #include "FICRuntimeProcessPlayScene.h"
 #include "FICSubsystem.h"
@@ -94,6 +95,10 @@ public:
 	TSharedPtr<FSequenceExporter> Exporter;
 	FString Path;
 	TSharedPtr<SWidget> Overlay;
+	int AudioSampleRate = 44100;
+	AkOutputDeviceID m_defaultOutputDeviceId = AK_INVALID_OUTPUT_DEVICE_ID;
+	IWwiseSoundEngineAPI* WwiseSoundEngineAPI = nullptr;
+	bool bStarted = false;
 
 	TArray<float> ETAStatistics;
 
@@ -101,6 +106,8 @@ public:
 
 	float PrevMinUndilatedFrameTime = 0;
 	float PrevMaxUndilatedFrameTime = 0;
+
+	~UFICRuntimeProcessRenderScene();
 
 	// Begin UFICRuntimeProcess
 	virtual void Start(AFICRuntimeProcessorCharacter* InCharacter) override;
