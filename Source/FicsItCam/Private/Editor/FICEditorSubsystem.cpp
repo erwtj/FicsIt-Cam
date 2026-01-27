@@ -129,7 +129,7 @@ void AFICEditorSubsystem::Tick(float DeltaTime) {
 				*ShowFlags)
 				.SetRealtimeUpdate(true));
 
-			ULocalPlayer* LocalPlayer = Cast<ULocalPlayer>(Cast<APlayerController>(EditorPlayerCharacter->GetController())->Player);
+			ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
 			FVector ViewLocation;
 			FRotator ViewRotation;
 			FSceneView* SceneView = LocalPlayer->CalcSceneView(&ViewFamily,  /*out*/ ViewLocation, /*out*/ ViewRotation, LocalPlayer->ViewportClient->Viewport);
@@ -234,6 +234,8 @@ void AFICEditorSubsystem::OpenEditor(AFICScene* InScene) {
 
 	// Save Original Player Character
 	OriginalPlayerCharacter = Controller->GetCharacter();
+
+
 	
 	// Create Editor Player character
 	AFICEditorCameraCharacter* Character = GetWorld()->SpawnActor<AFICEditorCameraCharacter>(InScene->GetActorLocation(), InScene->GetActorRotation());
@@ -251,8 +253,10 @@ void AFICEditorSubsystem::OpenEditor(AFICScene* InScene) {
 	// TODO: Persist "Viewport Camera Transform" sepperately in persistent editor storage for given scene
 	Controller->Possess(Character);
 	Character->SetEditorContext(Context);
-	Cast<AFGPlayerController>(Controller)->GetHUD<AFGHUD>()->SetHUDVisibility(false);
-	Cast<AFGPlayerController>(Controller)->GetHUD<AFGHUD>()->SetHiddenHUDMode(true);
+	if (AFGHUD* hud = Controller->GetHUD<AFGHUD>()) {
+		hud->SetHUDVisibility(false);
+		hud->SetHiddenHUDMode(true);
+	}
 	
 	// Get widgets to inject editor UI into and store necessery recovery data
 	PrevResolution = GSystemResolution;
