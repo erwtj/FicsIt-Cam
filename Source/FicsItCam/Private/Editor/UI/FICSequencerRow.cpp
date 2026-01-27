@@ -1,5 +1,7 @@
 ﻿#include "Editor/UI/FICSequencerRow.h"
 
+#include "FicsItCamModule.h"
+#include "ParallelFor.h"
 #include "Editor/UI/FICDragDrop.h"
 #include "Editor/UI/FICKeyframeIcon.h"
 #include "Editor/UI/FICSequencer.h"
@@ -31,6 +33,8 @@ SFICSequencerRow::SFICSequencerRow() {
 }
 
 int32 SFICSequencerRow::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const {
+	const double StartSeconds = FPlatformTime::Seconds();
+
 	OutDrawElements.PushClip(FSlateClippingZone(MyCullingRect));
 	
 	const FSlateBrush* BackgroundBrush;
@@ -43,6 +47,9 @@ int32 SFICSequencerRow::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 	LayerId = SPanel::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 	
 	OutDrawElements.PopClip();
+
+	const double ElapsedMs = (FPlatformTime::Seconds() - StartSeconds) * 1000.0;
+	if (ElapsedMs > 100) UE_LOG(LogFicsItCam, Warning, TEXT("SFICSequencerRow::OnPaint took %.3f ms"), ElapsedMs);
 
 	return LayerId + 20;
 }
@@ -74,62 +81,6 @@ void SFICSequencerRow::GetRowBrushAndColor(int32 InIndex, const TAttribute<FLine
 	OutColor.A = Tint.A;
 }
 
-void SFICSequencerRowAttributeKeyframe::Construct(const FArguments& InArgs, SFICSequencerRowAttribute* InRowAttribute, UFICEditorContext* InContext, FFICAttribute* InAttribute, FICFrame InFrame) {
-	RowAttribute = InRowAttribute;
-	Context = InContext;
-	Attribute = InAttribute;
-	Frame = InFrame;
-
-	Style = InArgs._Style;
-	if (!Style) Style = &FFICSequencerStyle::GetDefault();
-	ActiveFrame = InArgs._Frame;
-	FrameRange = InArgs._FrameRange;
-
-	ChildSlot[
-		SNew(SFICKeyframeIcon)
-		.Style(&Style->KeyframeIcon)
-		.IsSelected_Lambda([this]() {
-			return RowAttribute->GetSequencer()->GetSelectionManager().IsKeyframeSelected(*Attribute, Frame);
-		})
-		.Keyframe_Lambda([this]() {
-			TSharedPtr<FFICKeyframe> Keyframe;
-			TMap<FICFrame, TSharedRef<FFICKeyframe>> Keyframes = Attribute->GetKeyframes();
-			if (const TSharedRef<FFICKeyframe>* KeyframePtr = Keyframes.Find(Frame)) Keyframe = *KeyframePtr;
-			return Keyframe;
-		})
-	];
-}
-
-FReply SFICSequencerRowAttributeKeyframe::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
-	return FReply::Handled().DetectDrag(AsShared(), EKeys::LeftMouseButton);
-}
-
-FReply SFICSequencerRowAttributeKeyframe::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
-	FSelectionManager& SelectionManager = RowAttribute->GetSequencer()->GetSelectionManager();
-	if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton) {
-		SelectionManager.ToggleKeyframeSelection(*Attribute, GetFrame(), &MouseEvent.GetModifierKeys());
-		return FReply::Handled();
-	} else if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton) {
-		TPair<FFICAttribute*, FICFrame> KF_Selection(GetAttribute(), GetFrame());
-		if (!SelectionManager.GetSelection().Contains(KF_Selection)) {
-			SelectionManager.SetSelection({KF_Selection});
-		}
-		FMenuBuilder MenuBuilder = FICCreateKeyframeTypeChangeMenu(RowAttribute->GetSequencer()->Context, [this] {
-			return RowAttribute->GetSequencer()->GetSelectionManager().GetSelection();
-		});
-		FSlateApplication::Get().PushMenu(SharedThis(this), *MouseEvent.GetEventPath(), MenuBuilder.MakeWidget(), MouseEvent.GetScreenSpacePosition(), FPopupTransitionEffect::ContextMenu);
-	}
-	return SCompoundWidget::OnMouseButtonUp(MyGeometry, MouseEvent);
-}
-
-FReply SFICSequencerRowAttributeKeyframe::OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
-	if (MouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton)) {
-		if (!RowAttribute->GetSequencer()->GetSelectionManager().IsKeyframeSelected(*Attribute, GetFrame())) RowAttribute->GetSequencer()->GetSelectionManager().SetSelection({TPair<FFICAttribute*, FICFrame>(Attribute, GetFrame())});
-		return FReply::Handled().BeginDragDrop(MakeShared<FFICSequencerKeyframeDragDrop>(RowAttribute->GetSequencer(), MouseEvent));
-	}
-	return FReply::Unhandled();
-}
-
 void SFICSequencerRowAttribute::Construct(const FArguments& InArgs, SFICSequencer* InSequencer, TSharedRef<FFICEditorAttributeBase> InAttribute) {
 	SFICSequencerRow::FArguments SuperArgs;
 	SuperArgs._Style = InArgs._Style;
@@ -137,18 +88,10 @@ void SFICSequencerRowAttribute::Construct(const FArguments& InArgs, SFICSequence
 	SFICSequencerRow::Construct(SuperArgs, InSequencer);
 	
 	Attribute = InAttribute;
-	
-	DelegateHandle = Attribute->GetAttribute().OnUpdate.AddSP(SharedThis(this), &SFICSequencerRowAttribute::UpdateKeyframes);
-
-	UpdateKeyframes();
 }
 
 SFICSequencerRowAttribute::SFICSequencerRowAttribute() : Children(this) {
 	//TestColor = FLinearColor::MakeRandomColor();
-}
-
-SFICSequencerRowAttribute::~SFICSequencerRowAttribute() {
-	Attribute->GetAttribute().OnUpdate.Remove(DelegateHandle);
 }
 
 FVector2D SFICSequencerRowAttribute::ComputeDesiredSize(float) const {
@@ -156,6 +99,27 @@ FVector2D SFICSequencerRowAttribute::ComputeDesiredSize(float) const {
 }
 
 int32 SFICSequencerRowAttribute::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const {
+	FICFrameFloat start = LocalToFrameF(0.0);
+	FICFrameFloat end = LocalToFrameF(AllottedGeometry.GetLocalSize().X);
+	float height = AllottedGeometry.GetLocalSize().Y;
+
+	auto keyframes = Attribute->GetAttribute().GetKeyframes().Array();
+	Algo::SortBy(keyframes, [](const auto& Keyframe) { return Keyframe.Key; });
+
+	for (const auto& [frame, keyframe] : keyframes) {
+		if (frame < start || frame > end) continue;
+
+		float localX = FrameToLocal(frame) - height / 2.0f;
+
+		const FSlateBrush* icon = Style->KeyframeIcon.Icons.BrushByKeyframeType(keyframe->GetType());
+
+		bool bIsSelected = GetSequencer()->GetSelectionManager().IsKeyframeSelected(Attribute->GetAttribute(), frame);
+
+		FSlateDrawElement::MakeBox(OutDrawElements, LayerId++,
+			AllottedGeometry.ToPaintGeometry(FVector2D(localX, 0), FVector2D(height, height)),
+			icon, ESlateDrawEffect::None, (bIsSelected ? Style->KeyframeIcon.SelectedColor : Style->KeyframeIcon.UnselectedColor).GetColor(InWidgetStyle));
+	}
+
 	return SFICSequencerRow::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 }
 
@@ -163,15 +127,55 @@ FChildren* SFICSequencerRowAttribute::GetChildren() {
 	return &Children;
 }
 
-void SFICSequencerRowAttribute::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const {
-	for (int i = 0; i < Children.Num(); ++i) {
-		const TSharedRef<SFICSequencerRowAttributeKeyframe>& Child = Children[i];
-		FVector2D Size = Child->GetDesiredSize();
-		FVector2D Offset = -Child->GetDesiredSize() / 2.0f;
-		Offset.Y += AllottedGeometry.Size.Y / 2.0f;
-		Offset.X += FrameToLocal(Child->GetFrame());
-		ArrangedChildren.AddWidget(AllottedGeometry.MakeChild(Child, Offset, Size));
+void SFICSequencerRowAttribute::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const {}
+
+FReply SFICSequencerRowAttribute::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
+	FICFrame clickedFrame = LocalToFrame(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X);
+	FICFrame maxDistance = FMath::Abs(LocalToFrame(0) - LocalToFrame(MyGeometry.GetLocalSize().Y))/2;
+	TOptional<FICFrame> frame = Attribute->GetAttribute().GetClosestKeyframe(clickedFrame, maxDistance);
+	if (frame) {
+		return FReply::Handled().DetectDrag(AsShared(), EKeys::LeftMouseButton);
 	}
+	return FReply::Unhandled();
+}
+
+FReply SFICSequencerRowAttribute::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
+	FSelectionManager& SelectionManager = GetSequencer()->GetSelectionManager();
+	FICFrame clickedFrame = LocalToFrame(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X);
+	FICFrame maxDistance = FMath::Abs(LocalToFrame(0) - LocalToFrame(MyGeometry.GetLocalSize().Y))/2;
+	TOptional<FICFrame> frame = Attribute->GetAttribute().GetClosestKeyframe(clickedFrame, maxDistance);
+	if (frame && MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton) {
+		SelectionManager.ToggleKeyframeSelection(Attribute->GetAttribute(), *frame, &MouseEvent.GetModifierKeys());
+		return FReply::Handled();
+	} else if (frame && MouseEvent.GetEffectingButton() == EKeys::RightMouseButton) {
+		TPair<FFICAttribute*, FICFrame> KF_Selection(GetAttribute(), *frame);
+		if (!SelectionManager.GetSelection().Contains(KF_Selection)) {
+			SelectionManager.SetSelection({KF_Selection});
+		}
+		FMenuBuilder MenuBuilder = FICCreateKeyframeTypeChangeMenu(GetSequencer()->Context, [this] {
+			return GetSequencer()->GetSelectionManager().GetSelection();
+		});
+		FSlateApplication::Get().PushMenu(SharedThis(this), *MouseEvent.GetEventPath(), MenuBuilder.MakeWidget(), MouseEvent.GetScreenSpacePosition(), FPopupTransitionEffect::ContextMenu);
+		return FReply::Handled();
+	}
+	return SFICSequencerRow::OnMouseButtonUp(MyGeometry, MouseEvent);
+}
+
+FReply SFICSequencerRowAttribute::OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
+	if (MouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton)) {
+		FICFrame clickedFrame = LocalToFrame(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X);
+		FICFrame maxDistance = FMath::Abs(LocalToFrame(0) - LocalToFrame(MyGeometry.GetLocalSize().Y))/2;
+		TOptional<FICFrame> frame = Attribute->GetAttribute().GetClosestKeyframe(clickedFrame, maxDistance);
+		if (frame) {
+			if (!GetSequencer()->GetSelectionManager().IsKeyframeSelected(Attribute->GetAttribute(), *frame)) GetSequencer()->GetSelectionManager().SetSelection({TPair<FFICAttribute*, FICFrame>(&Attribute->GetAttribute(), *frame)});
+			return FReply::Handled().BeginDragDrop(MakeShared<FFICSequencerKeyframeDragDrop>(GetSequencer(), MouseEvent));
+		}
+	}
+	return FReply::Unhandled();
+}
+
+void SFICSequencerRowAttribute::UpdateFrameRange(FFICFrameRange InFrameRange) {
+	SFICSequencerRow::UpdateFrameRange(InFrameRange);
 }
 
 TArray<TTuple<FFICAttribute&, FICFrame>> SFICSequencerRowAttribute::GetKeyframesInBox(const FBox2D& InBox) {
@@ -192,20 +196,6 @@ TArray<TTuple<FFICAttribute&, FICFrame>> SFICSequencerRowAttribute::GetKeyframes
 		}
 	}
 	return Keyframes;
-}
-
-void SFICSequencerRowAttribute::UpdateKeyframes() {
-	Children.Empty();
-
-	for (TTuple<FICFrame, TSharedRef<FFICKeyframe>> Keyframe : Attribute->GetAttribute().GetKeyframes()) {
-		Children.Add(
-			SNew(SFICSequencerRowAttributeKeyframe, this, Context, &Attribute->GetAttribute(), Keyframe.Key)
-			.Style(Style)
-			.Frame_Lambda([this]() {
-				return ActiveFrame;
-			})
-		);
-	}
 }
 
 FFICAttribute* SFICSequencerRowAttribute::GetAttribute() const {

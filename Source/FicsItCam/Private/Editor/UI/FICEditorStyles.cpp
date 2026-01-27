@@ -1,4 +1,5 @@
 #include "CoreStyle.h"
+#include "FICKeyframe.h"
 #include "Editor/UI/FICEditorStyle.h"
 #include "Slate/SlateGameResources.h"
 #include "Styling/SlateStyleRegistry.h"
@@ -40,6 +41,28 @@ const FFICNumericKeyframeIcons& FFICNumericKeyframeIcons::GetDefault() {
 }
 
 const FName FFICKeyframeIconStyle::TypeName = TEXT("FFICKeyframeIcon");
+
+const FSlateBrush* FFICNumericKeyframeIcons::BrushByKeyframeType(TOptional<EFICKeyframeType> Type) const {
+	if (!Type) {
+		return &DefaultBrush;
+	}
+	switch (*Type) {
+		case FIC_KF_EASE:
+			return &AutoBrush;
+		case FIC_KF_EASEINOUT:
+			return &EaseInOutBrush;
+		case FIC_KF_MIRROR:
+			return &MirrorBrush;
+		case FIC_KF_CUSTOM:
+			return &CustomBrush;
+		case FIC_KF_LINEAR:
+			return &LinearBrush;
+		case FIC_KF_STEP:
+			return &StepBrush;
+		default:
+			return &DefaultBrush;
+	}
+}
 
 const FFICKeyframeIconStyle& FFICKeyframeIconStyle::GetDefault() {
 	static FFICKeyframeIconStyle Style;

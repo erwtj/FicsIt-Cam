@@ -1,6 +1,9 @@
 #include "Data/Objects/FICCamera.h"
 
+#include "FICEditorAttributeGroup.h"
 #include "FICUtils.h"
+#include "SButton.h"
+#include "SSlider.h"
 #include "Components/LineBatchComponent.h"
 #include "Editor/Data/FICEditorCameraActor.h"
 #include "Editor/FICEditorContext.h"
@@ -56,10 +59,66 @@ UObject* UFICCamera::CreateNewObject(UObject* InOuter, AFICScene* InScene) {
 	Camera->FOV.SetDefaultValue(Snapshot.FOV);
 	return Camera;
 }
-
+UE_DISABLE_OPTIMIZATION_SHIP
 TSharedRef<SWidget> UFICCamera::CreateDetailsWidget(UFICEditorContext* InContext) {
-	return InContext->GetEditorAttributes()[this]->CreateDetailsWidget(InContext);
+	return SNew(SVerticalBox)
+		+SVerticalBox::Slot().AutoHeight()[
+			InContext->GetEditorAttributes()[this]->CreateDetailsWidget(InContext)
+		]
+		+SVerticalBox::Slot().AutoHeight()[
+			SNew(SButton)
+			.Text(FText::FromString("Adjust Keyframes for Constant Speed"))
+			.OnClicked_Lambda([this, InContext]() {
+				auto editorAttribute = InContext->GetEditorAttributes()[this];
+				auto& attribute = editorAttribute->GetAttribute();
+				auto& posAttrib = *(FFICAttributePosition*)&editorAttribute->Get<FFICEditorAttributeGroup>("Position").GetAttribute();
+
+				bool collision = true;
+				for (int collisionTries = 0; collision && collisionTries < 10; ++collisionTries) {
+					collision = false;
+
+					auto keyframes = attribute.GetKeyframes().Array();
+					Algo::Sort(keyframes, [](const auto& a, const auto& b) { return a.Key < b.Key; });
+					if (keyframes.Num() < 3) return FReply::Handled();
+
+					FICFrame startFrame = keyframes[0].Key;
+					FICFrame endFrame = keyframes.Last().Key;
+
+					TArray<double> distances = {0};
+					TOptional<FVector> lastPos;
+					for (FICFrame frame = startFrame; frame <= endFrame; frame += 1) {
+						float posX = posAttrib.X.GetValue(frame);
+						float posY = posAttrib.Y.GetValue(frame);
+						float posZ = posAttrib.Z.GetValue(frame);
+						FVector pos(posX, posY, posZ);
+						if (lastPos.IsSet()) distances.Last() += FVector::Dist(pos, lastPos.GetValue());
+						if (attribute.HasKeyframe(frame) && lastPos.IsSet()) {
+							double distance = distances.Last();
+							distances.Add(distance);
+						}
+						lastPos = pos;
+					}
+					double fullDistance = distances.Last();
+
+					for (int keyframeIndex = 1; keyframeIndex < keyframes.Num()-1; ++keyframeIndex) {
+						FICFrame curTime = keyframes[keyframeIndex].Key;
+						float factor = distances[keyframeIndex-1] / fullDistance;
+						FICFrame newTime = startFrame + (float)(endFrame - startFrame) * factor;
+						if (newTime == curTime) continue;
+						int dir = (newTime < curTime) ? 1 : -1;
+						while (attribute.HasKeyframe(newTime)) {
+							newTime += dir;
+							collision = true;
+						}
+						attribute.MoveKeyframe(curTime, newTime);
+					}
+				}
+				attribute.RecalculateAllKeyframes();
+				return FReply::Handled();
+			})
+		];
 }
+UE_ENABLE_OPTIMIZATION_SHIP
 
 void UFICCamera::InitEditor(UFICEditorContext* Context) {
 	EditorContext = Context;

@@ -12,6 +12,22 @@ void FFICAttribute::RecalculateAllKeyframes() {
 	OnUpdateBroadcast();
 }
 
+TOptional<FICFrame> FFICAttribute::GetClosestKeyframe(FICFrame Time, FICFrame MaxDistance) {
+	TOptional<FICFrame> closestKeyframe;
+	for (const auto& [frame, keyframe] : GetKeyframes()) {
+		FICFrame dist = FMath::Abs(frame - Time);
+		if (dist > MaxDistance) continue;
+		if (!closestKeyframe) {
+			closestKeyframe = frame;
+		} else {
+			if (dist < FMath::Abs(*closestKeyframe - Time)) {
+				closestKeyframe = frame;
+			}
+		}
+	}
+	return closestKeyframe;
+}
+
 TSharedPtr<FFICKeyframe> FFICAttribute::GetPrevKeyframe(FICFrame Time, FICFrame& OutTime) {
 	TMap<FICFrame, TSharedRef<FFICKeyframe>> Keyframes = GetKeyframes();
 	TArray<FICFrame> Keys;

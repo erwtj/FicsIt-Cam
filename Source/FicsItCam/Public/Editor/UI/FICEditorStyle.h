@@ -7,6 +7,8 @@
 #include "Styling/SlateTypes.h"
 #include "FICEditorStyle.generated.h"
 
+enum EFICKeyframeType : int;
+
 class FFICEditorStyles {
 public:
 	static void Initialize();
@@ -56,6 +58,8 @@ struct FFICNumericKeyframeIcons : public FSlateWidgetStyle {
 	
 	UPROPERTY(EditAnywhere)
 	FSlateBrush HandleBrush;
+
+	const FSlateBrush* BrushByKeyframeType(TOptional<EFICKeyframeType> Type) const;
 };
 
 USTRUCT()

@@ -61,6 +61,7 @@ public:
 	virtual void RemoveKeyframe(FICFrame Time) override;
 	virtual void MoveKeyframe(FICFrame From, FICFrame To) override;
 	virtual void RecalculateKeyframe(FICFrame Time) override;
+	virtual void RecalculateAllKeyframes() override;
 	virtual FICValue GetFloatValue(FICFrameFloat Time) override;
 	virtual bool HasKeyframe(FICFrame Time) const override;
 
@@ -69,6 +70,9 @@ public:
 
 	virtual TSharedRef<FFICEditorAttributeBase> CreateEditorAttribute() override;
 	// End FFICAttribute
+
+	void RecalculateKeyframe(FICFrame Time, FFICFloatKeyframe* CurrentKeyframe);
+	void RecalculateKeyframe(FICFrame Time, FFICFloatKeyframe* CurrentKeyframe, FICFrame PTime, TOptional<float> PK, FICFrame NTime, TOptional<float> NK);
 
 	virtual FFICFloatKeyframe* GetKeyframe(FICFrame Time) { return Keyframes.Find(Time); }
 	

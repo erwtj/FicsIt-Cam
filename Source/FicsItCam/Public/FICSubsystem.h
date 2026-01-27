@@ -5,6 +5,7 @@
 #include "IImageWrapper.h"
 #include "RHIGPUReadback.h"
 #include "Util/SequenceExporter.h"
+#include "UnrealClient.h"
 #include "FICSubsystem.generated.h"
 
 class UFICRuntimeProcess;
@@ -30,6 +31,8 @@ struct FFICRenderRequest {
 
 	TSharedRef<FFICRenderTarget> RenderTarget;
 	TSharedRef<FSequenceExporter> Exporter;
+
+	TFunction<void()> ExtraFunc;
 
 	FFICRenderRequest(TSharedRef<FFICRenderTarget> RenderTarget, TSharedRef<FSequenceExporter> Exporter, FRHIGPUTextureReadback Readback) : Readback(Readback), RenderTarget(RenderTarget), Exporter(Exporter) {}
 };

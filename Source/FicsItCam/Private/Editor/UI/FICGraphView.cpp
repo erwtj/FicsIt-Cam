@@ -261,6 +261,15 @@ SFICGraphView::~SFICGraphView() {
 	}
 }
 
+void SFICGraphView::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) {
+	SPanel::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+
+	if (bUpdateWhenValid) {
+		bUpdateWhenValid = false;
+		Update();
+	}
+}
+
 FVector2D SFICGraphView::ComputeDesiredSize(float) const {
 	return FVector2D(0, 0);
 }
@@ -485,6 +494,11 @@ void SFICGraphView::SetAttributes(const TArray<TSharedRef<FFICEditorAttributeBas
 
 
 void SFICGraphView::Update() {
+	if (!GetParentWidget() || !GetParentWidget()->ValidatePathToChild(this)) {
+		bUpdateWhenValid = true;
+		return;
+	}
+
 	Children.Empty();
 	
 	for (TSharedRef<FFICEditorAttributeBase> Attribute : Attributes) {

@@ -53,7 +53,9 @@ public:
 		return Keyframes;
 	}
 
-	void RecalculateAllKeyframes();
+	virtual void RecalculateAllKeyframes();
+
+	TOptional<FICFrame> GetClosestKeyframe(FICFrame Time, FICFrame MaxDistance);
 
 	// TODO: Use Binary-Search
 	TSharedPtr<FFICKeyframe> GetNextKeyframe(FICFrame Time, FICFrame& OutTime);

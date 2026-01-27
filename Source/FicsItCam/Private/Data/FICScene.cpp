@@ -183,7 +183,7 @@ void AFICScene::SerializeScene(TArray<UObject*>& ObjectsToSave, FArchive& Ar) {
 	}
 	this->Serialize(DataProxy);
 }
-
+UE_DISABLE_OPTIMIZATION_SHIP
 void AFICScene::SaveToFile(const FString& Path) {
 	TArray<UObject*> ObjectsToSave;
 	FFICSceneObjectCollector Collector(ObjectsToSave);
@@ -201,7 +201,7 @@ void AFICScene::SaveToFile(const FString& Path) {
 		FSlateNotificationManager::Get().AddNotification(FNotificationInfo(FText::FromString("Failed to save scene file: " + Path)));
 	}
 }
-
+UE_ENABLE_OPTIMIZATION_SHIP
 void AFICScene::LoadFromFile(const FString& Path) {
 	auto subsys = AFICEditorSubsystem::GetFICEditorSubsystem(this);
 
