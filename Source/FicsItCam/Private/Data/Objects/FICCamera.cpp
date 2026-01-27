@@ -105,8 +105,9 @@ TSharedRef<SWidget> UFICCamera::CreateDetailsWidget(UFICEditorContext* InContext
 						float factor = distances[keyframeIndex-1] / fullDistance;
 						FICFrame newTime = startFrame + (float)(endFrame - startFrame) * factor;
 						if (newTime == curTime) continue;
+						int dir = (newTime < curTime) ? 1 : -1;
 						while (attribute.HasKeyframe(newTime)) {
-							newTime += newTime < curTime ? 1 : -1;
+							newTime += dir;
 							collision = true;
 						}
 						attribute.MoveKeyframe(curTime, newTime);
