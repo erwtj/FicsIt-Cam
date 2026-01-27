@@ -130,7 +130,13 @@ FChildren* SFICSequencerRowAttribute::GetChildren() {
 void SFICSequencerRowAttribute::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const {}
 
 FReply SFICSequencerRowAttribute::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
-	return FReply::Handled().DetectDrag(AsShared(), EKeys::LeftMouseButton);
+	FICFrame clickedFrame = LocalToFrame(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X);
+	FICFrame maxDistance = FMath::Abs(LocalToFrame(0) - LocalToFrame(MyGeometry.GetLocalSize().Y))/2;
+	TOptional<FICFrame> frame = Attribute->GetAttribute().GetClosestKeyframe(clickedFrame, maxDistance);
+	if (frame) {
+		return FReply::Handled().DetectDrag(AsShared(), EKeys::LeftMouseButton);
+	}
+	return FReply::Unhandled();
 }
 
 FReply SFICSequencerRowAttribute::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) {
@@ -160,8 +166,10 @@ FReply SFICSequencerRowAttribute::OnDragDetected(const FGeometry& MyGeometry, co
 		FICFrame clickedFrame = LocalToFrame(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X);
 		FICFrame maxDistance = FMath::Abs(LocalToFrame(0) - LocalToFrame(MyGeometry.GetLocalSize().Y))/2;
 		TOptional<FICFrame> frame = Attribute->GetAttribute().GetClosestKeyframe(clickedFrame, maxDistance);
-		if (frame && !GetSequencer()->GetSelectionManager().IsKeyframeSelected(Attribute->GetAttribute(), *frame)) GetSequencer()->GetSelectionManager().SetSelection({TPair<FFICAttribute*, FICFrame>(&Attribute->GetAttribute(), *frame)});
-		return FReply::Handled().BeginDragDrop(MakeShared<FFICSequencerKeyframeDragDrop>(GetSequencer(), MouseEvent));
+		if (frame) {
+			if (!GetSequencer()->GetSelectionManager().IsKeyframeSelected(Attribute->GetAttribute(), *frame)) GetSequencer()->GetSelectionManager().SetSelection({TPair<FFICAttribute*, FICFrame>(&Attribute->GetAttribute(), *frame)});
+			return FReply::Handled().BeginDragDrop(MakeShared<FFICSequencerKeyframeDragDrop>(GetSequencer(), MouseEvent));
+		}
 	}
 	return FReply::Unhandled();
 }
