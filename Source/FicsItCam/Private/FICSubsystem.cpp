@@ -252,9 +252,21 @@ void AFICSubsystem::HandleRenderRequest(TSharedPtr<FFICRenderRequest> InRequest)
 		} else {
 			InRequest->Exporter->AddFrame(PF_R8G8B8A8, data, ReadSize, Size);
 		}
+		InRequest->Readback.Unlock();
 	});
 	FlushRenderingCommands();
 	if (InRequest->ExtraFunc) InRequest->ExtraFunc();
+}
+
+void AFICSubsystem::WaitForAllExports() {
+	while (!RenderRequestQueue.IsEmpty()) {
+		TSharedPtr<FFICRenderRequest> NextRequest = *RenderRequestQueue.Peek();
+		if (NextRequest) {
+			NextRequest->RenderFence.Wait();
+			HandleRenderRequest(NextRequest);
+		}
+		RenderRequestQueue.Pop();
+	}
 }
 
 TSet<AFICScene*> AFICSubsystem::GetScenes() const {

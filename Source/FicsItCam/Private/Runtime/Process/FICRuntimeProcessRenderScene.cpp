@@ -4,13 +4,19 @@
 #include "AudioDevice.h"
 #include "CanvasTypes.h"
 #include "EngineModule.h"
+#include "FICDummyViewport.h"
 #include "FicsItCamModule.h"
 #include "FICSubsystem.h"
 #include "IImageWrapperModule.h"
 #include "PlatformFileManager.h"
+#include "SBorder.h"
+#include "SCanvas.h"
+#include "SlateMaterialBrush.h"
+#include "SScaleBox.h"
 #include "Algo/Accumulate.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Editor/FICEditorSubsystem.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "GameFramework/WorldSettings.h"
 #include "Widgets/SViewport.h"
 #include "Widgets/Notifications/SProgressBar.h"
@@ -19,7 +25,7 @@ UE_DISABLE_OPTIMIZATION_SHIP
 static void CaptureCallback(AkAudioBuffer& in_CaptureBuffer, AkOutputDeviceID /*in_idOutput*/, void* in_pCookie) {
 	auto self = reinterpret_cast<UFICRuntimeProcessRenderScene*>(in_pCookie);
 
-	if (!self->bStarted) return;
+	if (!self->bStarted || self->bSkipAudio) return;
 
 	size_t uSampleCount = static_cast<size_t>(in_CaptureBuffer.uValidFrames);
 
@@ -58,13 +64,17 @@ void UFICRuntimeProcessRenderScene::Start(AFICRuntimeProcessorCharacter* InChara
 		//FAudioDeviceManager::Get()->GetActiveAudioDevice().GetAudioDevice()->) // TODO: Audio Capture?
 		FAudioThread::StopAudioThread();
 
+		WwiseSoundEngineAPI->RenderAudio(false);
+
 		AKRESULT ret = WwiseSoundEngineAPI->SetOfflineRendering(true);
 		if (ret != AK_Success) {
 			UE_LOG(LogFicsItCam, Warning, TEXT("Unable to set offline rendering: %i"), ret);
 		}
 
+		WwiseSoundEngineAPI->RenderAudio(false);
+
 		// RenderAudio() wont generate more audio samples
-		WwiseSoundEngineAPI->SetOfflineRenderingFrameTime(0.0f);
+		WwiseSoundEngineAPI->SetOfflineRenderingFrameTime(TNumericLimits<AkReal32>::Min());
 
 		// Flush both messages from above
 		WwiseSoundEngineAPI->RenderAudio();
@@ -79,7 +89,7 @@ void UFICRuntimeProcessRenderScene::Start(AFICRuntimeProcessorCharacter* InChara
 		newSettings.channelConfig = channelConfig;
 
 		WwiseSoundEngineAPI->ReplaceOutput(newSettings, 0, &m_defaultOutputDeviceId);*/
-		WwiseSoundEngineAPI->RenderAudio(true);
+		//WwiseSoundEngineAPI->RenderAudio(true);
 
 		ret = WwiseSoundEngineAPI->RegisterCaptureCallback(&CaptureCallback, 0, this);
 		if (ret != AK_Success) {
@@ -89,6 +99,8 @@ void UFICRuntimeProcessRenderScene::Start(AFICRuntimeProcessorCharacter* InChara
 
 	FViewportClient* ViewportClient = GetWorld()->GetGameViewport();
 	DummyViewport = MakeShared<FFICRendererViewport>(ViewportClient, Scene->ResolutionWidth, Scene->ResolutionHeight);
+	FlushRenderingCommands();
+	DummyViewportInterface = MakeShared<FFICDummyViewport>(DummyViewport->GetRenderTarget(), FIntPoint(Scene->ResolutionWidth, Scene->ResolutionHeight));
 
 	// Create Save Path
 	FString FSP;
@@ -111,6 +123,32 @@ void UFICRuntimeProcessRenderScene::Start(AFICRuntimeProcessorCharacter* InChara
 	GEngine->GameViewport->AddViewportWidgetContent(
 		SAssignNew(Overlay, SVerticalBox)
 		+SVerticalBox::Slot()
+		.FillHeight(1.0)
+		.VAlign(VAlign_Fill)
+		.HAlign(HAlign_Fill)[
+			SNew(SBorder)
+			.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(FLinearColor::Black)
+			.Padding(0.f)
+			.Content()[
+				SNew(SScaleBox)
+				.Stretch(EStretch::ScaleToFit)
+				.StretchDirection(EStretchDirection::Both)
+				.HAlign(HAlign_Center)
+				.VAlign(VAlign_Center)
+				.Content()[
+					SNew(SViewport)
+					.ViewportInterface(DummyViewportInterface)
+					.ForceVolatile(true)
+					.IsEnabled(true)
+					.RenderOpacity(1.0)
+					.EnableGammaCorrection(false)
+					.ViewportSize(FVector2D(Scene->ResolutionWidth, Scene->ResolutionHeight))
+				]
+			]
+		]
+		+SVerticalBox::Slot()
+		.AutoHeight()
 		.VAlign(VAlign_Bottom)
 		.HAlign(HAlign_Fill)[
 			SNew(SOverlay)
@@ -138,11 +176,18 @@ void UFICRuntimeProcessRenderScene::Start(AFICRuntimeProcessorCharacter* InChara
 		]
 	);
 
+	bSkipAudio = true;
 	bStarted = true;
+
+	GEngine->GameViewport->Viewport->SetGameRenderingEnabled(false);
 }
 
 void UFICRuntimeProcessRenderScene::Tick(AFICRuntimeProcessorCharacter* InCharacter, float DeltaSeconds) {
-	if(GetWorld()->IsLevelStreamingRequestPending(GetWorld()->GetFirstPlayerController())) return;
+	if (!bStarted) return;
+
+	if(GetWorld()->IsLevelStreamingRequestPending(GetWorld()->GetFirstPlayerController())) {
+		UE_LOG(LogFicsItCam, Warning, TEXT("Level streaming is pending, skipping frame"));
+	}
 
 	ETAStatistics.Insert(GetWorld()->DeltaRealTimeSeconds, 0);
 	while (ETAStatistics.Num() > 60) ETAStatistics.Pop();
@@ -154,7 +199,7 @@ void UFICRuntimeProcessRenderScene::Tick(AFICRuntimeProcessorCharacter* InCharac
 	FlushRenderingCommands();
 	
 	UGameViewportClient* ViewportClient = GetWorld()->GetGameViewport();
-	FCanvas Canvas(DummyViewport.Get(), NULL, ViewportClient->GetWorld(), ViewportClient->GetWorld()->GetFeatureLevel());
+	FCanvas Canvas(DummyViewport.Get(), NULL, ViewportClient->GetWorld(), ViewportClient->GetWorld()->GetFeatureLevel(), FCanvas::CDM_DeferDrawing, ViewportClient->ShouldDPIScaleSceneCanvas() ? ViewportClient->GetDPIScale() : 1.0f);
 	ViewportClient->Draw(DummyViewport.Get(), &Canvas);
 	Canvas.Flush_GameThread();
 
@@ -163,9 +208,12 @@ void UFICRuntimeProcessRenderScene::Tick(AFICRuntimeProcessorCharacter* InCharac
 
 	FlushRenderingCommands();
 
+	bSkipAudio = false;
+
 	WwiseSoundEngineAPI->SetOfflineRenderingFrameTime(1.0 / Scene->FPS);
-	//WwiseSoundEngineAPI->RenderAudio();
-	
+	WwiseSoundEngineAPI->RenderAudio();
+	WwiseSoundEngineAPI->SetOfflineRenderingFrameTime(TNumericLimits<AkReal32>::Min()); // TODO: Some proper restriction would be better (also above in Start)
+
 	++FrameProgress;
 }
 
@@ -174,12 +222,20 @@ void UFICRuntimeProcessRenderScene::Stop(AFICRuntimeProcessorCharacter* InCharac
 
 	if (!bStarted) return;
 
+	AFICSubsystem::GetFICSubsystem(this)->WaitForAllExports();
+
+	bStarted = false;
+
+	GEngine->GameViewport->Viewport->SetGameRenderingEnabled(true);
+
 	WwiseSoundEngineAPI->UnregisterCaptureCallback(&CaptureCallback, 0, this);
 	WwiseSoundEngineAPI->SetOfflineRendering(false);
+	WwiseSoundEngineAPI->RenderAudio(false);
 	WwiseSoundEngineAPI->RenderAudio();
 
 	if (Overlay) GEngine->GameViewport->RemoveViewportWidgetContent(Overlay.ToSharedRef());
 
+	DummyViewportInterface.Reset();
 	Exporter->Finish();
 
 	FAudioThread::StartAudioThread();
@@ -187,8 +243,6 @@ void UFICRuntimeProcessRenderScene::Stop(AFICRuntimeProcessorCharacter* InCharac
 	auto* Settings = GetWorld()->GetWorldSettings();
 	Settings->MinUndilatedFrameTime = PrevMinUndilatedFrameTime;
 	Settings->MaxUndilatedFrameTime = PrevMaxUndilatedFrameTime;
-
-	bStarted = false;
 }
 
 UFICRuntimeProcessRenderScene* UFICRuntimeProcessRenderScene::StartRenderScene(AFICScene* InScene) {
