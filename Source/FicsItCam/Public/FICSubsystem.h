@@ -146,6 +146,7 @@ public:
 	
 	void ExportRenderTarget(TSharedRef<FSequenceExporter> Exporter, TSharedRef<FFICRenderTarget> RenderTarget, bool bInstant = false);
 	void HandleRenderRequest(TSharedPtr<FFICRenderRequest> InRequest);
+	void WaitForAllExports();
 
 	UFUNCTION(BlueprintCallable)
 	TSet<AFICScene*> GetScenes() const;

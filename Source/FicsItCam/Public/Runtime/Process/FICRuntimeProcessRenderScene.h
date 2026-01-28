@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "WwiseSoundEngineAPI.h"
 #include "CanvasTypes.h"
+#include "FICDummyViewport.h"
 #include "FICRuntimeProcessPlayScene.h"
 #include "FICSubsystem.h"
 #include "Viewport.h"
@@ -89,9 +90,8 @@ UCLASS()
 class UFICRuntimeProcessRenderScene : public UFICRuntimeProcessPlayScene {
 	GENERATED_BODY()
 public:
-	UPROPERTY()
-	AFICCaptureCamera* CaptureCamera = nullptr;
 	TSharedPtr<FFICRendererViewport> DummyViewport = nullptr;
+	TSharedPtr<FFICDummyViewport> DummyViewportInterface;
 	TSharedPtr<FSequenceExporter> Exporter;
 	FString Path;
 	TSharedPtr<SWidget> Overlay;
@@ -99,6 +99,7 @@ public:
 	AkOutputDeviceID m_defaultOutputDeviceId = AK_INVALID_OUTPUT_DEVICE_ID;
 	IWwiseSoundEngineAPI* WwiseSoundEngineAPI = nullptr;
 	bool bStarted = false;
+	bool bSkipAudio = false;
 
 	TArray<float> ETAStatistics;
 
