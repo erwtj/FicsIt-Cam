@@ -40,6 +40,8 @@ public:
 
 	void SaveWindowSettings();
 	void LoadWindowSettings();
+
+	double Progress = 0.0;
 	
 public:
 	UPROPERTY(BlueprintAssignable)

@@ -78,7 +78,7 @@ public:
 	virtual void PostLoadGame_Implementation(int32 saveVersion, int32 gameVersion) override;
 	// End IFGSaveInterface
 	
-	TArray<UObject*> GetSceneObjects() {
+	const TArray<UObject*>& GetSceneObjects() {
 		return SceneObjects;
 	}
 

@@ -32,9 +32,11 @@ struct FFICRenderRequest {
 	TSharedRef<FFICRenderTarget> RenderTarget;
 	TSharedRef<FSequenceExporter> Exporter;
 
+	double Time;
+
 	TFunction<void()> ExtraFunc;
 
-	FFICRenderRequest(TSharedRef<FFICRenderTarget> RenderTarget, TSharedRef<FSequenceExporter> Exporter, FRHIGPUTextureReadback Readback) : Readback(Readback), RenderTarget(RenderTarget), Exporter(Exporter) {}
+	FFICRenderRequest(TSharedRef<FFICRenderTarget> RenderTarget, TSharedRef<FSequenceExporter> Exporter, FRHIGPUTextureReadback Readback, double Time) : Readback(Readback), RenderTarget(RenderTarget), Exporter(Exporter), Time(Time) {}
 };
 
 struct FFICRenderTarget_Raw : public FFICRenderTarget {
@@ -144,7 +146,7 @@ public:
 
 	AFICRuntimeProcessorCharacter* GetRuntimeProcessorCharacter() { return RuntimeProcessorCharacter; }
 	
-	void ExportRenderTarget(TSharedRef<FSequenceExporter> Exporter, TSharedRef<FFICRenderTarget> RenderTarget, bool bInstant = false);
+	void ExportRenderTarget(TSharedRef<FSequenceExporter> Exporter, TSharedRef<FFICRenderTarget> RenderTarget, bool bInstant = false, double Time = 0.0);
 	void HandleRenderRequest(TSharedPtr<FFICRenderRequest> InRequest);
 	void WaitForAllExports();
 

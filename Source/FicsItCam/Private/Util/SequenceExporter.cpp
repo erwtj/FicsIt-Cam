@@ -2,11 +2,14 @@
 
 #include <string>
 
+#include "DefaultValueHelper.h"
 #include "FicsItCamModule.h"
 #include "FileHelper.h"
+#include "GenericPlatformHttp.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
 #include "Paths.h"
+#include "Engine/EngineBaseTypes.h"
 
 #if PLATFORM_WINDOWS
 FSequenceMP4Exporter::FSequenceMP4Exporter(FIntPoint InImageSize, int FPS, FString InPath, int AudioSampleRate) : ImageSize(InImageSize), FPS(FPS), Path(InPath), AudioSampleRate(AudioSampleRate) {}
@@ -37,12 +40,26 @@ bool FSequenceMP4Exporter::Init() {
 
 	FTCHARToUTF8 FilePath(*Path, Path.Len());
 	std::string FilePathStr = std::string(FilePath.Get(), FilePath.Length());
+	const char* format = NULL;
+	TOptional<int64> video_bitrate;
+	if (Path.StartsWith(TEXT("srt://"))) {
+		format = "mpegts";
+		if (auto option = FGenericPlatformHttp::GetUrlParameter(Path, TEXT("bitrate"))) {
+			int64 bitrate;
+			if (FDefaultValueHelper::ParseInt64(*option, bitrate)) {
+				video_bitrate = bitrate;
+			}
+		}
+	}
+
+	TCHAR_TO_UTF8(*Format);
 
 	// Find Output Format Context by file-ending otherwise use mpeg
 	{
-		ret = avformat_alloc_output_context2(&FormatContext, NULL, NULL, FilePathStr.c_str());
-		if (!FormatContext) {
-			ret = avformat_alloc_output_context2(&FormatContext, NULL, "mpeg", FilePathStr.c_str());
+		ret = avformat_alloc_output_context2(&FormatContext, NULL, format, FilePathStr.c_str());
+		if (!FormatContext && format == NULL) {
+			format = "mpeg";
+			ret = avformat_alloc_output_context2(&FormatContext, NULL, format, FilePathStr.c_str());
 		}
 		if (ret < 0 || !FormatContext) {
 			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create format context: %s"), ffmpeg_err2str((ret)));
@@ -77,7 +94,7 @@ bool FSequenceMP4Exporter::Init() {
 			return false;
 		}
 		// CodecContext->codec_id = FormatContext->oformat->video_codec; /// Nötig???
-		//CodecContext->bit_rate = 40000000;
+		if (video_bitrate) VideoCodecContext->bit_rate = *video_bitrate;
 		VideoCodecContext->width = ImageSize.X;
 		VideoCodecContext->height = ImageSize.Y;
 		VideoStream->time_base = AVRational{1, FPS};
@@ -98,7 +115,7 @@ bool FSequenceMP4Exporter::Init() {
 	}
 
 	// Create Audio Stream & associated Settings/Objects
-	{
+	if (AudioSampleRate > 0) {
 		AudioCodec = avcodec_find_encoder(FormatContext->oformat->audio_codec);
 		if (!AudioCodec) {
 			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to get audio codec from format context."));
@@ -172,7 +189,7 @@ bool FSequenceMP4Exporter::Init() {
 	}
 
 	// Open and Init Audio Stream
-	{
+	if (AudioSampleRate > 0) {
 		ret = avcodec_open2(AudioCodecContext, AudioCodec, NULL);
 		if (ret < 0) {
 			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to open audio codec for audio codec context: %s"), ffmpeg_err2str(ret));
@@ -210,23 +227,25 @@ bool FSequenceMP4Exporter::Init() {
 		return false;
 	}
 
-	SwrContext = swr_alloc();
-	if (!SwrContext) {
-		UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create swr context for audio sample rate conversion."));
-		return false;
-	}
+	if (AudioSampleRate > 0) {
+		SwrContext = swr_alloc();
+		if (!SwrContext) {
+			UE_LOG(LogFicsItCam, Error, TEXT("FFmpeg-Export: Failed to create swr context for audio sample rate conversion."));
+			return false;
+		}
 
-	av_opt_set_chlayout  (SwrContext, "in_chlayout",       &AudioCodecContext->ch_layout,      0);
-	av_opt_set_int       (SwrContext, "in_sample_rate",     AudioSampleRate,    0);
-	av_opt_set_sample_fmt(SwrContext, "in_sample_fmt",      AV_SAMPLE_FMT_FLT, 0);
-	av_opt_set_chlayout  (SwrContext, "out_chlayout",      &AudioCodecContext->ch_layout,      0);
-	av_opt_set_int       (SwrContext, "out_sample_rate",    AudioCodecContext->sample_rate,    0);
-	av_opt_set_sample_fmt(SwrContext, "out_sample_fmt",     AudioCodecContext->sample_fmt,     0);
+		av_opt_set_chlayout  (SwrContext, "in_chlayout",       &AudioCodecContext->ch_layout,      0);
+		av_opt_set_int       (SwrContext, "in_sample_rate",     AudioSampleRate,    0);
+		av_opt_set_sample_fmt(SwrContext, "in_sample_fmt",      AV_SAMPLE_FMT_FLT, 0);
+		av_opt_set_chlayout  (SwrContext, "out_chlayout",      &AudioCodecContext->ch_layout,      0);
+		av_opt_set_int       (SwrContext, "out_sample_rate",    AudioCodecContext->sample_rate,    0);
+		av_opt_set_sample_fmt(SwrContext, "out_sample_fmt",     AudioCodecContext->sample_fmt,     0);
 
-	/* initialize the resampling context */
-	if ((ret = swr_init(SwrContext)) < 0) {
-		fprintf(stderr, "Failed to initialize the resampling context\n");
-		exit(1);
+		/* initialize the resampling context */
+		if ((ret = swr_init(SwrContext)) < 0) {
+			fprintf(stderr, "Failed to initialize the resampling context\n");
+			exit(1);
+		}
 	}
 
 	ret = avio_open(&FormatContext->pb, FilePathStr.c_str(), AVIO_FLAG_WRITE);
@@ -246,6 +265,8 @@ bool FSequenceMP4Exporter::Init() {
 
 void FSequenceMP4Exporter::Finish() {
 	FSequenceExporter::Finish();
+
+	if (!FormatContext) return;
 
 	// Flush delayed packets from encoders (important for H.264/AAC and MP4)
 	if (VideoCodecContext && VideoPacket) {
@@ -270,9 +291,14 @@ void FSequenceMP4Exporter::Finish() {
 	if (ret < 0) {
 		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to write format file trailer (may corrupt file): %s"), ffmpeg_err2str(ret));
 	}
+
+	if (FormatContext->pb) {
+		avio_close(FormatContext->pb);
+		FormatContext->pb = nullptr;
+	}
 }
 
-void FSequenceMP4Exporter::AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size) {
+void FSequenceMP4Exporter::AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size, double Time) {
 	if (bFinished) return;
 
 	int64 FramePts = VideoFrameNr++;
@@ -297,14 +323,19 @@ void FSequenceMP4Exporter::AddFrame(EPixelFormat Format, void* ptr, FIntPoint Re
 		UE_LOG(LogFicsItCam, Warning, TEXT("FFmpeg-Export: Failed to send video frame to encoding (skip frame %lld): %s"), FramePts, ffmpeg_err2str(ret));
 		return;
 	}
-	
-	VideoFrame->pts = FramePts;
+
+	if (Time < 0.0) {
+		VideoFrame->pts = Time*FPS;
+	} else {
+		VideoFrame->pts = FramePts;
+	}
 	
 	ReadVideoBuffer();
 }
 
 void FSequenceMP4Exporter::AddAudioFrame(float* Samples, int SampleCount) {
 	if (bFinished) return;
+	if (AudioSampleRate < 1) return;
 
 	uint64 nb_samples = swr_get_delay(SwrContext, AudioCodecContext->sample_rate) + AudioFrame->nb_samples;
 
@@ -378,7 +409,7 @@ bool FSequenceImageExporter::Init() {
 	return true;
 }
 
-void FSequenceImageExporter::AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size) {
+void FSequenceImageExporter::AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size, double Time) {
 	FString FilePath = FPaths::Combine(Path, FString::Printf(TEXT("%s-%05llu.jpg"), *StartTime.ToString(), Increment++));
 
 	IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName("ImageWrapper"));

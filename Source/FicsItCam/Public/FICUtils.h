@@ -28,6 +28,12 @@ public:
 	UFUNCTION(BlueprintCallable)
 	static bool IsValidFICObjectName(const FString& InName);
 
+	UFUNCTION(BlueprintCallable)
+	static bool IsValidFICCameraReference(const FString& InReference);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, meta=(WorldContext="WorldContext"))
+	static FFICCameraReference CameraReferenceFromString(UObject* WorldContext, FString ReferenceString, FString& OutName);
+
 	UFUNCTION(BlueprintCallable, meta=(WorldContext="WorldContext"))
 	static bool IsAction(UObject* WorldContext, const FKeyEvent& InKeyEvent, const FName& ActionName);
 

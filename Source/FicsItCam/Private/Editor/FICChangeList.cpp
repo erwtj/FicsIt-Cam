@@ -84,6 +84,7 @@ void FFICChange_RemoveSceneObject::UndoChange() {
 }
 
 void FFICChangeList::PushChange(TSharedRef<FFICChange> InChange) {
+	fgcheck(IsInGameThread());
 	if (Changes.Num() > 0) {
 		TSharedRef<FFICChange> Change = Changes[Changes.Num()-1];
 		if (Change->IsStackable(InChange)) {
@@ -97,21 +98,24 @@ void FFICChangeList::PushChange(TSharedRef<FFICChange> InChange) {
 	if (Changes.Num() > MaxChanges) {
 		Changes.RemoveAt(0, Changes.Num() - MaxChanges);
 	}
-	
+
 	ChangeIndex = Changes.Num() - 1;
 }
 
 TSharedPtr<FFICChange> FFICChangeList::PushChange() {
+	fgcheck(IsInGameThread());
 	if (ChangeIndex >= Changes.Num()-1) return nullptr;
 	return Changes[++ChangeIndex];
 }
 
 TSharedPtr<FFICChange> FFICChangeList::PopChange() {
+	fgcheck(IsInGameThread());
 	if (ChangeIndex < 0) return nullptr;
 	return Changes[ChangeIndex--];
 }
 
 TSharedPtr<FFICChange> FFICChangeList::PeakChange() {
+	fgcheck(IsInGameThread());
 	if (ChangeIndex < 0) return nullptr;
 	return Changes[ChangeIndex];
 }

@@ -23,7 +23,7 @@ public:
 	}
 
 	virtual bool Init() = 0;
-	virtual void AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size) = 0;
+	virtual void AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size, double Time) = 0;
 	virtual void Finish() {
 		bFinished = true;
 	};
@@ -35,6 +35,8 @@ private:
 	FIntPoint ImageSize;
 	int FPS;
 	FString Path;
+	FString Format;
+
 	AVFormatContext* FormatContext = nullptr;
 	AVStream* VideoStream = nullptr;
 	AVStream* AudioStream = nullptr;
@@ -58,7 +60,7 @@ public:
 	~FSequenceMP4Exporter();
 	
 	virtual bool Init() override;
-	virtual void AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size) override;
+	virtual void AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size, double Time) override;
 	virtual void Finish() override;
 
 	void AddAudioFrame(float* Samples, int SampleCount);
@@ -79,6 +81,6 @@ public:
 	FSequenceImageExporter(FString InPath, FIntPoint InImageSize);
 
 	virtual bool Init() override;
-	virtual void AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size) override;
+	virtual void AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size, double Time) override;
 	virtual void Finish() override;
 };

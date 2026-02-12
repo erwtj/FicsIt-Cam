@@ -2,6 +2,7 @@
 #include "FicsItCam/Public/FICUtils.h"
 
 #include "EnhancedPlayerInput.h"
+#include "Regex.h"
 #include "Editor/FICEditorSubsystem.h"
 #include "GameFramework/InputSettings.h"
 #include "GameFramework/PlayerInput.h"
@@ -69,6 +70,19 @@ bool UFICUtils::IsValidFICObjectName(const FString& InName) {
 		return true;
 	}
 	return false;
+}
+
+bool UFICUtils::IsValidFICCameraReference(const FString& InReference) {
+	static FRegexPattern Pattern(TEXT("^(>|#)?((-?\\d+)~)?(\\w+)(:(\\w+))?(\\[(.*)\\])?$"));
+	FRegexMatcher Match(Pattern, InReference);
+	if (Match.FindNext()) {
+		return true;
+	}
+	return false;
+}
+
+FFICCameraReference UFICUtils::CameraReferenceFromString(UObject* WorldContext, FString ReferenceString, FString& OutName) {
+	return FFICCameraReference::FromString(WorldContext, ReferenceString, &OutName);
 }
 
 bool UFICUtils::IsAction(UObject* WorldContext, const FKeyEvent& InKeyEvent, const FName& InActionName) {
