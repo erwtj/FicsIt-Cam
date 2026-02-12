@@ -48,11 +48,14 @@ private:
 	UPROPERTY(SaveGame)
 	FString Camera;
 
+	UPROPERTY(SaveGame)
+	FString Data;
+
 	UFICRuntimeProcessPlayScene* GetCurrentScenePlay(UObject* WorldContext) const;
 
 public:
 	FFICCameraReference() = default;
-	FFICCameraReference(bool bUsePlay, int64 Frame, FString Scene, FString Camera) : bUsePlay(bUsePlay), Frame(Frame), Scene(Scene), Camera(Camera) {}
+	FFICCameraReference(bool bUsePlay, int64 Frame, FString Scene, FString Camera, FString Data) : bUsePlay(bUsePlay), Frame(Frame), Scene(Scene), Camera(Camera), Data(Data) {}
 
 	static FFICCameraReference FromString(UObject* WorldContext, FString ReferenceString, FString* OutName);
 
@@ -62,6 +65,7 @@ public:
 	AFICScene* GetScene(UObject* WorldContext) const;
 	FICFrameFloat GetTime(UObject* WorldContext, UFICRuntimeProcessPlayScene** OptOutRuntimePlay = nullptr) const;
 	UFICCamera* GetCamera(UObject* WorldContext, UFICRuntimeProcessPlayScene** OptOutRuntimePlay = nullptr, FICFrameFloat* OptOutTime = nullptr) const;
+	FString GetData() const { return Data; }
 	bool IsAnimated() const { return bUsePlay; }
 
 	FFICCameraSettingsSnapshot GetSnapshot(UObject* WorldContext) const;

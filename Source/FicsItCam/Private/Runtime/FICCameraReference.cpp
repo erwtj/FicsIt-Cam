@@ -16,7 +16,7 @@ UFICRuntimeProcessPlayScene* FFICCameraReference::GetCurrentScenePlay(UObject* W
 }
 
 FFICCameraReference FFICCameraReference::FromString(UObject* WorldContext, FString ReferenceString, FString* OutName) {
-	static const FRegexPattern Pattern = FRegexPattern("^(>|#)?((-?\\d+)~)?(\\w+)(:(\\w+))?$");
+	static const FRegexPattern Pattern = FRegexPattern("^(>|#)?((-?\\d+)~)?(\\w+)(:(\\w+))?(\\[(.*)\\])?$");
 
 	if (OutName) *OutName = TEXT("");
 
@@ -28,22 +28,24 @@ FFICCameraReference FFICCameraReference::FromString(UObject* WorldContext, FStri
 		FString Num = Matcher.GetCaptureGroup(3);
 		FString Scene = Matcher.GetCaptureGroup(4);
 		FString Camera = Matcher.GetCaptureGroup(6);
+		FString Data = Matcher.GetCaptureGroup(8);
+		Ref.Data = Data;
 		
 		if (Type == ">") Ref.bUsePlay = true;
 		else if (Type != "#") {
 			if (Type.Len() < 1 && Num.Len () < 1 && Camera.Len() < 1) *OutName = Scene;
-			return FFICCameraReference();
+			return Ref;
 		}
-		
+
+		if (WorldContext) {
+			if (!Ref.IsValid(WorldContext)) return Ref;
+		}
+
 		if (Num.Len() > 0) Ref.Frame = FCString::Atoi64(*Num);
 
 		Ref.Scene = Scene;
 		Ref.Camera = Camera;
 
-		if (WorldContext) {
-			if (!Ref.IsValid(WorldContext)) return FFICCameraReference();
-		}
-		
 		return Ref;
 	}
 
@@ -55,6 +57,7 @@ FString FFICCameraReference::ToString() const {
 	if (Frame != 0) Str += FString::Printf(TEXT("%lld~"), Frame);
 	Str += Scene;
 	if (Camera.Len() > 0) Str += FString::Printf(TEXT(":%s"), *Camera);
+	if (Data.Len() > 0) Str += FString::Printf(TEXT("[%s]"), *Data);
 	return Str;
 }
 

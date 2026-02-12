@@ -2,8 +2,10 @@
 
 #include "CineCameraComponent.h"
 #include "CineCameraSettings.h"
+#include "DefaultValueHelper.h"
 #include "FGGameUserSettings.h"
 #include "FICUtils.h"
+#include "GenericPlatformHttp.h"
 #include "Command/CommandSender.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Runtime/FICCameraReference.h"
@@ -34,8 +36,21 @@ struct FFICCameraArgument {
 
 	FVector2D GetResolution(UObject* WorldContext) const {
 		AFICScene* Scene = CameraReference.GetScene(WorldContext);
-		if (!Scene) return Resolution;
-		return FVector2D(Scene->ResolutionWidth, Scene->ResolutionHeight);
+		FVector2D res = Resolution;
+		if (Scene) res = FVector2D(Scene->ResolutionWidth, Scene->ResolutionHeight);
+		if (auto option = FGenericPlatformHttp::GetUrlParameter(CameraReference.GetData(), TEXT("ResX"))) {
+			int resX = res.X;
+			if (FDefaultValueHelper::ParseInt(*option, resX)) {
+				res.X = resX;
+			}
+		}
+		if (auto option = FGenericPlatformHttp::GetUrlParameter(CameraReference.GetData(), TEXT("ResY"))) {
+			int resY = res.Y;
+			if (FDefaultValueHelper::ParseInt(*option, resY)) {
+				res.Y = resY;
+			}
+		}
+		return res;
 	}
 
 	FVector2D GetSensorDimensions(UObject* WorldContext) const {
@@ -81,7 +96,7 @@ struct FFICCameraArgument {
 			CineCamera->Filmback.SensorWidth = SensorDimensionsValue.X;
 			CineCamera->Filmback.SensorHeight = SensorDimensionsValue.Y;
 		} else {
-			CaptureCamera->Camera->SetAspectRatio(Resolution.X / Resolution.Y);
+			CaptureCamera->Camera->SetAspectRatio(ResolutionValue.X / ResolutionValue.Y);
 		}
 	}
 
@@ -105,6 +120,7 @@ struct FFICCameraArgument {
 		Arg.Name = Name;
 		Arg.CameraSettingsSnapshot = UFICUtils::CreateCameraSettingsSnapshotFromView(InSender);
 		FIntPoint Resolution = UFGGameUserSettings::GetFGGameUserSettings()->GetScreenResolution();
+		FURL url(nullptr, *CameraRef.GetData(), TRAVEL_Absolute);
 		Arg.Resolution = FVector2D(Resolution.X, Resolution.Y);
 		return Arg;
 	}

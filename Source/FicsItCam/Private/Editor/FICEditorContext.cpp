@@ -1,6 +1,7 @@
 ﻿#include "Editor/FICEditorContext.h"
 
 #include "FGInputLibrary.h"
+#include "FicsItCamModule.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Data/Objects/FICCamera.h"
 #include "Data/Objects/FICSceneObject.h"
@@ -57,6 +58,7 @@ void UFICEditorContext::Unload() {
 		UnloadSceneObject(SceneObject);
 	}
 	Scene = nullptr;
+	FFICChange::ChangeStack.Empty();
 }
 
 UFICEditorContext::UFICEditorContext() {}
@@ -139,7 +141,7 @@ void UFICEditorContext::UnloadSceneObject(UObject* SceneObject) {
 	
 	AllAttributes->RemoveAttribute(FString::FromInt(SceneObject->GetUniqueID()));
 	auto attribute = EditorAttributes.Find(SceneObject);
-	if (!attribute) {
+	if (attribute) {
 		auto attr = *attribute;
 		attr->GetAttribute().OnUpdate.Remove(DataAttributeOnUpdateDelegateHandles[SceneObject]);
 		TFunction<void(TSharedRef<FFICEditorAttributeBase>)> RemoveEditAttrib;

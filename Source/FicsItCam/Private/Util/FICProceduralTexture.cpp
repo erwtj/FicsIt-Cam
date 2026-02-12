@@ -64,7 +64,7 @@ bool FSequenceExporterProceduralTexture::Init() {
 	return true;
 }
 
-void FSequenceExporterProceduralTexture::AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size) {
+void FSequenceExporterProceduralTexture::AddFrame(EPixelFormat Format, void* ptr, FIntPoint ReadSize, FIntPoint Size, double Time) {
 	TArray<FColor> SrcData;
 	SrcData.AddUninitialized(Size.X * Size.Y * sizeof(FColor));
 	for (int Y = 0; Y < Size.Y; ++Y) {

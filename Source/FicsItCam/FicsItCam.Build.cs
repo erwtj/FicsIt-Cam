@@ -27,6 +27,7 @@ public class FicsItCam : ModuleRules
             "Niagara",
             "EnhancedInput",
             "WwiseSoundEngine",
+            "HTTP",
 		});
 			
         PublicDependencyModuleNames.AddRange(new string[]

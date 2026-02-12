@@ -217,8 +217,8 @@ void AFICSubsystem::DestoryRuntimeProcessorCharacter(AFICRuntimeProcessorCharact
 	OriginalPlayerCharacter = nullptr;
 }
 
-void AFICSubsystem::ExportRenderTarget(TSharedRef<FSequenceExporter> Exporter, TSharedRef<FFICRenderTarget> RenderTarget, bool bInstant) {
-	TSharedRef<FFICRenderRequest> RenderRequest = MakeShared<FFICRenderRequest>(RenderTarget, Exporter, FRHIGPUTextureReadback(TEXT("FICSubsystem Texture Readback")));
+void AFICSubsystem::ExportRenderTarget(TSharedRef<FSequenceExporter> Exporter, TSharedRef<FFICRenderTarget> RenderTarget, bool bInstant, double Time) {
+	TSharedRef<FFICRenderRequest> RenderRequest = MakeShared<FFICRenderRequest>(RenderTarget, Exporter, FRHIGPUTextureReadback(TEXT("FICSubsystem Texture Readback")), Time);
 
 	ENQUEUE_RENDER_COMMAND(SceneDrawCompletion)([this, RenderTarget, RenderRequest](FRHICommandListImmediate& RHICmdList){
 		FTextureRHIRef Target = RenderTarget->GetRenderTarget();
@@ -247,10 +247,10 @@ void AFICSubsystem::HandleRenderRequest(TSharedPtr<FFICRenderRequest> InRequest)
 			FColor* ptrLinearColor = (FColor*)FMemory::Malloc(ReadSize.X * ReadSize.Y * sizeof(FColor));
 			ConvertRawB10G10R10A2DataToFColor(ReadSize.X, ReadSize.Y, (uint8*)data, ReadSize.X * 4, ptrLinearColor);
 			//ConvertFLinearColorsToFColorSRGB(ptrLinearColor, (FColor*)data, ReadSize.X + ReadSize.Y);
-			InRequest->Exporter->AddFrame(PF_R8G8B8A8, ptrLinearColor, ReadSize, Size);
+			InRequest->Exporter->AddFrame(PF_R8G8B8A8, ptrLinearColor, ReadSize, Size, InRequest->Time);
 			FMemory::Free(ptrLinearColor);
 		} else {
-			InRequest->Exporter->AddFrame(PF_R8G8B8A8, data, ReadSize, Size);
+			InRequest->Exporter->AddFrame(PF_R8G8B8A8, data, ReadSize, Size, InRequest->Time);
 		}
 		InRequest->Readback.Unlock();
 	});
