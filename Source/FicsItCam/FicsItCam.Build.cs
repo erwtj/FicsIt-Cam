@@ -28,6 +28,8 @@ public class FicsItCam : ModuleRules
             "EnhancedInput",
             "WwiseSoundEngine",
             "HTTP",
+			"Json",
+			"JsonUtilities",
 		});
 			
         PublicDependencyModuleNames.AddRange(new string[]

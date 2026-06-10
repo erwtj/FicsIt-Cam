@@ -24,6 +24,23 @@ Most Video Editing software does recognize the image sequences automatically on 
 ## Written Documentation
 You can find a written documentation of the modification on [SMR aka. ficsit.app](https://ficsit.app/mod/FicsItCam).
 
+## Experimental Import Command
+This branch adds an experimental JSON scene importer:
+
+- Command: `/fic import <scene name> <path to .ficjson>`
+- Purpose: import camera keyframes exported from Blender tooling.
+- Expected structure: `scene` and `camera.keyframes` fields from `ficsit-cam-scene-blueprint/v1`.
+
+Example:
+
+`/fic import flyover C:\Users\you\Documents\scene.ficjson`
+
+Keyframe channels consumed:
+
+- `pos_x`, `pos_y`, `pos_z`
+- `rot_pitch`, `rot_yaw`, `rot_roll`
+- `fov`, `aperture`, `focus_distance`
+
 ## Contributors
 - Panakotta00 (Development)
 - Deantendo (Icon)
